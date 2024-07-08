@@ -19,21 +19,14 @@ BUILD_DESKTOP=$4
 
 Main() {
 	case $RELEASE in
-		stretch)
-			# your code here
-			# InstallOpenMediaVault # uncomment to get an OMV 4 image
+		jammy)
+			InstallAdvancedDesktop
 			;;
-		buster)
-			# your code here
+		noble)
+			InstallAdvancedDesktop
 			;;
-		bullseye)
-			# your code here
-			;;
-		bionic)
-			# your code here
-			;;
-		focal)
-			# your code here
+		*)
+			echo "Unsupported release: $RELEASE"
 			;;
 	esac
 } # Main
@@ -235,10 +228,13 @@ UnattendedStorageBenchmark() {
 
 InstallAdvancedDesktop()
 {
-	apt-get install -yy transmission libreoffice libreoffice-style-tango meld remmina thunderbird kazam avahi-daemon
-	[[ -f /usr/share/doc/avahi-daemon/examples/sftp-ssh.service ]] && cp /usr/share/doc/avahi-daemon/examples/sftp-ssh.service /etc/avahi/services/
-	[[ -f /usr/share/doc/avahi-daemon/examples/ssh.service ]] && cp /usr/share/doc/avahi-daemon/examples/ssh.service /etc/avahi/services/
-	apt clean
+	apt-get update
+	echo "Resyncing overlay files..."
+	apt-get -qqy install rsync
+	rsync -av /tmp/overlay/ /
+	echo "Installing advanced desktop packages..."
+	apt-get -y install armbian-firmware-full
+	echo "Operation completed."
 } # InstallAdvancedDesktop
 
 Main "$@"
