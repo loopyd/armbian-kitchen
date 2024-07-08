@@ -7,6 +7,7 @@ source "${CSCRIPT_DIR}/lib.sh"
 CARGS=($@)
 ARMBIAN_INSTALL_DIR=${ARMBIAN_INSTALL_DIR:-/opt/armbian}
 RKDEVELOPTOOL_INSTALL_DIR=${RKDEVELOPTOOL_INSTALL_DIR:-/opt/rkdeveloptool}
+EZFLASH_INSTALL_DIR=${EZFLASH_INSTALL_DIR:-/opt/ezflash}
 OVERWRITE=false
 
 # Display program usage information
@@ -26,11 +27,19 @@ function usage() {
 		echo "  -i, --install-dir DIR   Install rkdeveloptool to DIR (default: /opt/rkdeveloptool)"
 		echo "  -o, --overwrite         Overwrite existing rkdeveloptool, if present"
 		;;
+	ezflash)
+		echo "Usage: $0 ezflash [OPTIONS]"
+		echo "Options:"
+		echo "  -h, --help              Display this help message"
+		echo "  -i, --install-dir DIR   Install ezflash loader bins to DIR (default: /opt/ezflash)"
+		echo "  -o, --overwrite         Overwrite existing ezflash loader bins, if present"
+		;;
 	*)
 		echo "Usage: $0 [ACTION] [OPTIONS]"
 		echo "Actions:"
 		echo "  armbian                 Download Armbian source code"
 		echo "  rkdeveloptool           Download Rockchip rkdeveloptool"
+		echo "  ezflash                 Download ezflash loader bins"
 		echo "Options:"
 		echo "  -h, --help              Display this help message"
 		;;
@@ -78,6 +87,27 @@ function parse_args() {
 				;;
 			-i | --install-dir)
 				RKDEVELOPTOOL_INSTALL_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-o | --overwrite)
+				OVERWRITE=true
+				ARGS=(${ARGS[@]:1})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}"
+				usage
+				;;
+			esac
+		done
+		;;
+	ezflash)	
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-i | --install-dir)
+				EZFLASH_INSTALL_DIR=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-o | --overwrite)
@@ -199,6 +229,59 @@ function install_rkdeveloptool() {
 		warning "Failed to remove temporary files"
 	}
 	success "rkdeveloptool installed to $RKDEVELOPTOOL_INSTALL_DIR"
+	return 0
+}
+
+function install_ezflash() {
+	temp_file=$(mktemp)
+	temp_folder=$(mktemp -d)
+	if [[ -d "$EZFLASH_INSTALL_DIR" ]]; then
+		warning "ezflash loader bins already exists in $EZFLASH_INSTALL_DIR"
+		if [[ $OVERWRITE == false ]]; then
+			read -p "Do you want to overwrite it? [y/N]: " -r
+			if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+				return 0
+			fi
+		else
+			info "Removing existing ezflash loader bins..."
+			sudo rm -rf "$EZFLASH_INSTALL_DIR"
+			success "Existing ezflash loader bins removed"
+		fi
+	fi
+	info "Downloading miniloader bins..."
+	wget -qO "${temp_file}" "https://github.com/loopyd/board-miniloaders/archive/refs/heads/master.zip" || {
+		error "Failed to download loader bin"
+		rm -rf "${temp_file}" "${temp_folder}"
+		return 1
+	}
+	info "Unzipping miniloader bins from ${temp_file} to ${temp_folder}..."
+	eval "bsdtar --strip-components=1 -xf \"$temp_file\" -C \"$temp_folder\"
+" || {
+		error "Failed to unzip loader bins"
+		rm -rf "$temp_file" "$temp_folder"
+		return 1
+	}
+	info "Installing miniloader bins to ${EZFLASH_INSTALL_DIR}..."
+	sudo mkdir -p "${EZFLASH_INSTALL_DIR}" || {
+		error "Failed to create directory ${EZFLASH_INSTALL_DIR}"
+		rm -rf "${temp_file}" "${temp_folder}"
+		return 1
+	}
+	sudo mv -f "${temp_folder}"/* "${EZFLASH_INSTALL_DIR}" || {
+		error "Failed to move loader bins to ${EZFLASH_INSTALL_DIR}"
+		rm -rf "${temp_file}" "${temp_folder}"
+		return 1
+	}
+	sudo chown -R "${USER}:${USER}" "${EZFLASH_INSTALL_DIR}" || {
+		error "Failed to set ownership of ${EZFLASH_INSTALL_DIR}"
+		rm -rf "${temp_file}" "${temp_folder}"
+		return 1
+	}
+	\rm -rf "${temp_file}" "${temp_folder}" || {
+		warning "Failed to remove temporary files"
+	}
+	success "ezflash loader bins installed to ${EZFLASH_INSTALL_DIR}"
+	return 0
 }
 
 # Main
@@ -209,6 +292,9 @@ armbian)
 	;;
 rkdeveloptool)
 	install_rkdeveloptool
+	;;
+ezflash)
+	install_ezflash
 	;;
 *)
 	error "Unknown action: $ACTION"
