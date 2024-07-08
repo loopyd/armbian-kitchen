@@ -6,9 +6,6 @@ source "${CSCRIPT_DIR}/lib.sh"
 
 CARGS=($@)
 ACTION=""
-ARMBIAN_INSTALL_DIR=${ARMBIAN_INSTALL_DIR:-/opt/armbian}
-ARMBIAN_CONFIG_FILE=${ARMBIAN_CONFIG_FILE:-}
-RKDEVELOPTOOL_INSTALL_DIR=${RKDEVELOPTOOL_INSTALL_DIR:-/opt/rkdeveloptool}
 
 # Display program usage information
 function usage() {
@@ -19,6 +16,7 @@ function usage() {
 		echo "  -h, --help              Display this help message"
 		echo "  -d, --install-dir DIR   Armbian source code directory (default: /opt/armbian)"
 		echo "  -c, --config-file FILE  Armbian configuration file"
+		echo "  -u, --userpatches-dir DIR  Armbian userpatches directory"
 		;;
 	rkdeveloptool)
 		echo "Usage: $0 rkdeveloptool [OPTIONS]"
@@ -61,6 +59,10 @@ function parse_args() {
 				;;
 			-c|--config-file)
 				ARMBIAN_CONFIG_FILE=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-u|--userpatches-dir)
+				ARMBIAN_USERPATCHES_DIR=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			*)
@@ -115,8 +117,6 @@ function armbian_config_str() {
 # Compile Armbian
 function compile_armbian() {
 	info "Compiling Armbian..."
-	ARMBIAN_CONFIG_FILE=$(cd "$(dirname "${ARMBIAN_CONFIG_FILE}")" && pwd)/$(basename "${ARMBIAN_CONFIG_FILE}")
-	ARMBIAN_INSTALL_DIR=$(cd "$ARMBIAN_INSTALL_DIR" && pwd)
 	pushd "$ARMBIAN_INSTALL_DIR" >/dev/null 2>&1 || {
 		error "Armbian directory not found: $ARMBIAN_INSTALL_DIR"
 		return 1
@@ -128,7 +128,7 @@ function compile_armbian() {
 	if [[ -f "compile.sh" ]]; then
 		info "Injecting Armbian user patches..."
 		rm -rf "$ARMBIAN_INSTALL_DIR/userpatches" 2>/dev/null || true
-		cp -rf "$CSCRIPT_DIR/userpatches/" "$ARMBIAN_INSTALL_DIR/" || {
+		cp -rf "$ARMBIAN_USERPATCHES_DIR" "$ARMBIAN_INSTALL_DIR/" || {
 			error "Failed to inject Armbian user patches"
 			return 1
 		}
@@ -192,6 +192,13 @@ function compile_rkdeveloptool() {
 
 # Main
 parse_args ${CARGS[*]}
+ARMBIAN_CONFIG_FILE=$(cd "$(dirname "${ARMBIAN_CONFIG_FILE}")" && pwd)/$(basename "${ARMBIAN_CONFIG_FILE}")
+ARMBIAN_INSTALL_DIR=$(cd "$ARMBIAN_INSTALL_DIR" && pwd)
+ARMBIAN_INSTALL_DIR=${ARMBIAN_INSTALL_DIR%/}
+ARMBIAN_USERPATCHES_DIR=$(cd "$ARMBIAN_USERPATCHES_DIR" && pwd)
+ARMBIAN_USERPATCHES_DIR=${ARMBIAN_USERPATCHES_DIR%/}
+RKDEVELOPTOOL_INSTALL_DIR=$(cd "$RKDEVELOPTOOL_INSTALL_DIR" && pwd)
+RKDEVELOPTOOL_INSTALL_DIR=${RKDEVELOPTOOL_INSTALL_DIR%/}
 case $ACTION in
 armbian)
 	compile_armbian || exit $?

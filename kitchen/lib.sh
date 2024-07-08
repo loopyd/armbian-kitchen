@@ -6,12 +6,38 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	exit 1
 fi
 
+# Colors
 C_RED=$(tput setaf 1)
 C_GREEN=$(tput setaf 2)
 C_YELLOW=$(tput setaf 3)
 C_BLUE=$(tput setaf 4)
+C_MAGENTA=$(tput setaf 5)
+C_CYAN=$(tput setaf 6)
+C_WHITE=$(tput setaf 7)
 C_BOLD=$(tput bold)
 C_RESET=$(tput sgr0)
+
+# Core environment variables
+DEBUG=${DEBUG:-false}
+FILE_OVERWRITE=${FILE_OVERWRITE:-false}
+
+# Armbian environment variables
+ARMBIAN_INSTALL_DIR=${ARMBIAN_INSTALL_DIR:-./build/armbian}
+ARMBIAN_CONFIG_FILE=${ARMBIAN_CONFIG_FILE:-./recipe/armbian.conf}
+ARMBIAN_USERPATCHES_DIR=${ARMBIAN_USERPATCHES_DIR:-./recipe/userpatches}
+
+# rkdeveloptool environment variables
+RKDEVELOPTOOL_INSTALL_DIR=${RKDEVELOPTOOL_INSTALL_DIR:-./build/rkdeveloptool}
+
+# Ezflash loader environment variables
+EZFLASH_INSTALL_DIR=${EZFLASH_INSTALL_DIR:-./build/ezflash}
+EZFLASH_IMAGE_FILE=${EZFLASH_IMAGE_FILE:-}
+EZFLASH_LOADER_FILE=${EZFLASH_LOADER_FILE:-}
+EZFLASH_FLASH_OFFSET=${EZFLASH_FLASH_OFFSET:-0}
+EZFLASH_ERASE_EMMC_SIZE=${EZFLASH_ERASE_EMMC_SIZE:-0}
+EZFLASH_WAIT_DEVICE=${EZFLASH_WAIT_DEVICE:-true}
+EZFLASH_WAIT_DEVICE_TIMEOUT=${EZFLASH_WAIT_DEVICE_TIMEOUT:-60}
+EZFLASH_AUTO_REBOOT=${EZFLASH_AUTO_REBOOT:true}
 
 # Display information message
 function info() {

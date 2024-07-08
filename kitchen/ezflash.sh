@@ -7,15 +7,6 @@ source "${CSCRIPT_DIR}/lib.sh"
 CARGS=($@)
 ACTION=""
 
-RKDEVELOPTOOL_INSTALL_DIR=${RKDEVELOPTOOL_INSTALL_DIR:-/opt/rkdeveloptool}
-IMAGE_PATH=${IMAGE_PATH:-}
-LOADER_PATH=${LOADER_PATH:-}
-FLASH_OFFSET=${FLASH_OFFSET:-0}
-ERASE_EMMC_SIZE=${ERASE_EMMC_SIZE:-0}
-WAIT_DEVICE=${WAIT_DEVICE:-false}
-WAIT_DEVICE_TIMEOUT=${WAIT_DEVICE_TIMEOUT:-30}
-AUTO_REBOOT=${AUTO_REBOOT:-false}
-
 # block non-root execution
 if [ "$(id -u)" -ne 0 ]; then
 	error "This script must be run as root"
@@ -228,27 +219,27 @@ function parse_args() {
 				usage $ACTION
 				;;
 			-i | --image)
-				IMAGE_PATH=${ARGS[1]}
+				EZFLASH_IMAGE_FILE=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-l | --loader)
-				LOADER_PATH=${ARGS[1]}
+				EZFLASH_LOADER_FILE=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-o | --offset)
-				FLASH_OFFSET=${ARGS[1]}
+				EZFLASH_FLASH_OFFSET=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-w | --wait-device)
-				WAIT_DEVICE=true
+				EZFLASH_WAIT_DEVICE=true
 				ARGS=(${ARGS[@]:1})
 				;;
 			-t | --timeout)
-				WAIT_DEVICE_TIMEOUT=${ARGS[1]}
+				EZFLASH_WAIT_DEVICE_TIMEOUT=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-r | --reboot)
-				AUTO_REBOOT=true
+				EZFLASH_AUTO_REBOOT=true
 				ARGS=(${ARGS[@]:1})
 				;;
 			-d | --install-dir)
@@ -269,19 +260,19 @@ function parse_args() {
 				usage $ACTION
 				;;
 			-e | --erase-emmc-size)
-				ERASE_EMMC_SIZE=${ARGS[1]}
+				EZFLASH_ERASE_EMMC_SIZE=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-w | --wait-device)
-				WAIT_DEVICE=true
+				EZFLASH_WAIT_DEVICE=true
 				ARGS=(${ARGS[@]:1})
 				;;
 			-t | --timeout)
-				WAIT_DEVICE_TIMEOUT=${ARGS[1]}
+				EZFLASH_WAIT_DEVICE_TIMEOUT=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			-r | --reboot)
-				AUTO_REBOOT=true
+				EZFLASH_AUTO_REBOOT=true
 				ARGS=(${ARGS[@]:1})
 				;;
 			-d | --install-dir)
@@ -306,14 +297,16 @@ function parse_args() {
 parse_args ${CARGS[*]}
 RKDEVELOPTOOL_INSTALL_DIR=$(cd $RKDEVELOPTOOL_INSTALL_DIR && pwd)
 RKDEVELOPTOOL_INSTALL_DIR=${RKDEVELOPTOOL_INSTALL_DIR%/}
+[ -n "$EZFLASH_IMAGE_FILE" ] && EZFLASH_IMAGE_FILE=$(cd "$(dirname "${EZFLASH_IMAGE_FILE}")" && pwd)/$(basename "${EZFLASH_IMAGE_FILE}")
+[ -n "$EZFLASH_LOADER_FILE" ] && EZFLASH_LOADER_FILE=$(cd "$(dirname "${EZFLASH_LOADER_FILE}")" && pwd)/$(basename "${EZFLASH_LOADER_FILE}")
 
 case "$ACTION" in
 flash)
-	if [ -z "$IMAGE_PATH" ]; then
+	if [ -z "$EZFLASH_IMAGE_FILE" ]; then
 		error "Image path not provided"
 		usage $ACTION
 	fi
-	if [ -z "$LOADER_PATH" ]; then
+	if [ -z "$EZFLASH_LOADER_FILE" ]; then
 		error "Loader path not provided"
 		usage $ACTION
 	fi
@@ -322,11 +315,11 @@ flash)
 		exit 1
 	fi
 	info "Flash Parameters:"
-	info "  Sideload loader: $LOADER_PATH"
-	info "  Image: $IMAGE_PATH"
-	info "  Byte Offset: $FLASH_OFFSET"
-	if [ "$WAIT_DEVICE" = true ]; then
-		wait_connect $WAIT_DEVICE_TIMEOUT || {
+	info "  Sideload loader: $EZFLASH_LOADER_FILE"
+	info "  Image: $EZFLASH_IMAGE_FILE"
+	info "  Byte Offset: $EZFLASH_FLASH_OFFSET"
+	if [ "$EZFLASH_WAIT_DEVICE" = true ]; then
+		wait_connect $EZFLASH_WAIT_DEVICE_TIMEOUT || {
 			error "Maskrom Device not connected"
 			exit 1
 		}
@@ -336,14 +329,14 @@ flash)
 			exit 1
 		fi
 	fi
-	sideload_loader $LOADER_PATH || exit $?
-	flash_image $IMAGE_PATH $FLASH_OFFSET || exit $?
-	if [ "$AUTO_REBOOT" = true ]; then
+	sideload_loader $EZFLASH_LOADER_FILE || exit $?
+	flash_image $EZFLASH_IMAGE_FILE $EZFLASH_FLASH_OFFSET || exit $?
+	if [ "$EZFLASH_AUTO_REBOOT" = true ]; then
 		reboot_device || exit $?
 	fi
 	;;
 erase)
-	if [ $ERASE_EMMC_SIZE -eq 0 ]; then
+	if [ $EZFLASH_ERASE_EMMC_SIZE -eq 0 ]; then
 		error "Erase size not provided"
 		usage $ACTION
 	fi
@@ -352,9 +345,9 @@ erase)
 		exit 1
 	fi
 	info "Erase Parameters:"
-	info "  Erase size: $ERASE_EMMC_SIZE"
-	if [ "$WAIT_DEVICE" = true ]; then
-		wait_connect $WAIT_DEVICE_TIMEOUT || {
+	info "  Erase size: $EZFLASH_ERASE_EMMC_SIZE"
+	if [ "$EZFLASH_WAIT_DEVICE" = true ]; then
+		wait_connect $EZFLASH_WAIT_DEVICE_TIMEOUT || {
 			error "Maskrom Device did not connect within the specified timeframe."
 			exit 1
 		}
@@ -364,8 +357,8 @@ erase)
 			exit 1
 		fi
 	fi
-	erase_emmc $ERASE_EMMC_SIZE || exit $?
-	if [ "$AUTO_REBOOT" = true ]; then
+	erase_emmc $EZFLASH_ERASE_EMMC_SIZE || exit $?
+	if [ "$EZFLASH_AUTO_REBOOT" = true ]; then
 		reboot_device || exit $?
 	fi
 	;;
