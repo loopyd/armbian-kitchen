@@ -133,6 +133,7 @@ function flash_image() {
 		error "Failed to write image"
 		return 1
 	}
+	success "Image flashed successfully"
 	return 0
 }
 
@@ -147,6 +148,7 @@ function wait_connect() {
 	while [ $timeout -gt 0 ]; do
 		printf "Waiting for device to connect (%d seconds) \r" $timeout
 		if is_device_connected; then
+			printf "\n\rDevice connected!\n"
 			return 0
 		fi
 		sleep 1
@@ -335,7 +337,7 @@ flash)
 		fi
 	fi
 	sideload_loader $LOADER_PATH || exit $?
-	flash_image $IMAGE_PATH || exit $?
+	flash_image $IMAGE_PATH $FLASH_OFFSET || exit $?
 	if [ "$AUTO_REBOOT" = true ]; then
 		reboot_device || exit $?
 	fi

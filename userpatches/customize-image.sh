@@ -234,6 +234,7 @@ InstallAdvancedDesktop()
 	rsync -av /tmp/overlay/ /
 	echo "Installing advanced desktop packages..."
 	apt-get -y install armbian-firmware-full
+	systemctl enable rtl8852be-reload
 	echo "Operation completed."
 } # InstallAdvancedDesktop
 
