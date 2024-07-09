@@ -17,6 +17,7 @@ function usage() {
 		echo "  -d, --install-dir DIR   Armbian source code directory (default: /opt/armbian)"
 		echo "  -c, --config-file FILE  Armbian configuration file"
 		echo "  -u, --userpatches-dir DIR  Armbian userpatches directory"
+		echo "  -s, --target TARGET       Armbian build target (optional)"
 		;;
 	rkdeveloptool)
 		echo "Usage: $0 rkdeveloptool [OPTIONS]"
@@ -63,6 +64,10 @@ function parse_args() {
 				;;
 			-u|--userpatches-dir)
 				ARMBIAN_USERPATCHES_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-s|--target)
+				ARMBIAN_BUILD_TARGET=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			*)
@@ -116,7 +121,6 @@ function armbian_config_str() {
 
 # Compile Armbian
 function compile_armbian() {
-	info "Compiling Armbian..."
 	pushd "$ARMBIAN_INSTALL_DIR" >/dev/null 2>&1 || {
 		error "Armbian directory not found: $ARMBIAN_INSTALL_DIR"
 		return 1
@@ -132,11 +136,19 @@ function compile_armbian() {
 			error "Failed to inject Armbian user patches"
 			return 1
 		}
-		info "Running Armbian compile script..."
-		eval "./compile.sh $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
-			error "Failed to compile Armbian"
-			return 1
-		}
+		if [[ -n $ARMBIAN_BUILD_TARGET ]]; then
+			info "Running Armbian compile script for target(s): $ARMBIAN_BUILD_TARGET"
+			eval "./compile.sh BUILD_ONLY=${ARMBIAN_BUILD_TARGET} $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
+				error "Failed to compile Armbian"
+				return 1
+			}
+		else
+			info "Running Armbian compile script..."
+			eval "./compile.sh CLEAN_LEVEL=make-atf,make-kernel,make-uboot,debs,alldebs,images,cache,oldcache $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
+				error "Failed to compile Armbian"
+				return 1
+			}
+		fi
 		success "Armbian compiled successfully"
 		pushd "./output/images" >/dev/null 2>&1 || {
 			error "Armbian images output directory not found"

@@ -21,11 +21,9 @@ Main() {
 	case $RELEASE in
 		jammy)
 			InstallTweaks
-			InstallXRDP
 			;;
 		noble)
 			InstallTweaks
-			InstallXRDP
 			;;
 		*)
 			echo "Unsupported release: $RELEASE"
@@ -240,107 +238,5 @@ InstallTweaks()
 	systemctl enable rtl8852be-reload
 	echo "Operation completed."
 } # InstallTweaks
-
-InstallXRDP() {
-	local DEPS_LIST
-	local XRDP_VERSION
-	local XRDP_PULSEAUDIO_MODULE_VERSION
-	local BUILD_DIR
-	export LANG=C LC_ALL="en_US.UTF-8"
-	export DEBIAN_FRONTEND=noninteractive
-	export APT_LISTCHANGES_FRONTEND=none
-    XORGXRDP_VERSION=0.10.1
-    XRDP_VERSION=0.10.0
-	XRDP_PULSEAUDIO_MODULE_VERSION=0.7
-	XRDP_CONFIG_ARGS=(--enable-glamor --enable-rfxcodec --enable-mp3lame --enable-fdkaac --enable-opus --enable-pixman --enable-fuse --enable-jpeg --enable-ipv6)
-    BUILD_DIR=/tmp/xrdpbuild
-	# sed -i 's/main/main contrib non-free/' /etc/apt/sources.list
-	DEPS_LIST=(make autoconf libtool intltool pkg-config nasm ninja-build meson yasm cmake xserver-xorg-dev libssl-dev libpam0g-dev libjpeg-dev libfuse-dev libopus-dev libmp3lame-dev libxfixes-dev libxrandr-dev libgbm-dev libepoxy-dev libegl1-mesa-dev libcap-dev libsndfile-dev libsndfile1-dev libspeex-dev libpulse-dev libfdk-aac-dev pulseaudio libturbojpeg0-dev libjpeg-turbo8-dev libexecs-dev libdbus-1-dev libsystemd-dev libx11-xcb-dev libfftw3-dev libasyncns-dev libgtk-3-dev libltdl-dev)
-    
-	# Install Dependencies
-    apt-get update
-    apt-get --yes --allow-unauthenticated  --fix-missing --no-install-recommends install ${DEPS_LIST[@]}
-
-    # Install source code
-	PULSEAUDIO_VERSION=$(pulseaudio --version | awk '{print $2}')
-	mkdir -p $BUILD_DIR/{xrdp,xorgxrdp,pulseaudio-module-xrdp,pulseaudio}
-	printf "Downloading XRDP source code..."
-    wget -qO - "https://github.com/neutrinolabs/xrdp/releases/download/v$XRDP_VERSION/xrdp-$XRDP_VERSION.tar.gz" | tar xzf - -C $BUILD_DIR/xrdp --strip-components=1 || {
-		printf "failed\n"
-		exit 1
-	}
-	printf "OK\n"
-	printf "Downloading XORGXRDP source code..."
-	wget -qO - "https://github.com/neutrinolabs/xorgxrdp/releases/download/v$XORGXRDP_VERSION/xorgxrdp-$XORGXRDP_VERSION.tar.gz" | tar xzf - -C $BUILD_DIR/xorgxrdp --strip-components=1 || {
-		printf "failed\n"
-		exit 1
-	}
-	printf "OK\n"
-    echo "Downloading Pulseaudio source code..."
-	wget -qO - "https://freedesktop.org/software/pulseaudio/releases/pulseaudio-${PULSEAUDIO_VERSION}.tar.xz" | tar xJf - -C $BUILD_DIR/pulseaudio --strip-components=1 || {
-		printf "failed\n"
-		exit 1
-	}
-	printf "OK\n"
-	echo "Downloading XRDP Pulseaudio Module source code..."
-	wget -qO - "https://github.com/neutrinolabs/pulseaudio-module-xrdp/archive/v${XRDP_PULSEAUDIO_MODULE_VERSION}.tar.gz" | tar xzf - -C $BUILD_DIR/pulseaudio-module-xrdp --strip-components=1 || {
-		printf "failed\n"
-		exit 1
-	}
-	printf "OK\n"
-
-	# Build and Install XRDP
-	echo "Building XRDP version $XRDP_VERSION..."
-	pushd $BUILD_DIR/xrdp
-    ./bootstrap
-    ./configure ${XRDP_CONFIG_ARGS[@]}
-    make -j$(nproc)
-    make install
-	popd
-    echo "XRDP has been built and installed"
-
-    # Build and Install XORGXRDP
-	echo "Building XORGXRDP version $XORGXRDP_VERSION..."
-    pushd $BUILD_DIR/xorgxrdp
-    ./bootstrap
-    ./configure ${XRDP_CONFIG_ARGS[@]}
-    make -j$(nproc)
-    make install
-	popd
-    echo "XORGXRDP has been built and installed"
-
-    # Build and Install Pulseaudio
-    pushd $BUILD_DIR/pulseaudio
-	meson build
-	ninja -C build
-	# don't install it, we just need access to the built module library files.
-	# ninja -C build install
-	ldconfig
-    PULSEAUDIO_SRC_DIR="$BUILD_DIR/pulseaudio"
-	popd
-
-    pushd $BUILD_DIR/pulseaudio-module-xrdp
-    ./bootstrap  
-    ./configure PULSE_DIR=$PULSEAUDIO_SRC_DIR
-    make
-    make install
-	popd
-
-    ls $(pkg-config --variable=modlibexecdir libpulse)
-
-    # Clean Residues
-    apt-get -qqy remove --purge ${DEPS_LIST[*]}
-	apt -qqy autoremove
-	apt -qqy clean
-	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* $BUILD_DIR
-
-	# Freeze Pulseaudio
-	echo "pulseaudio hold" | dpkg --set-selections
-	echo "pulseaudio-module-xrdp hold" | dpkg --set-selections
-	echo "libpulse0 hold" | dpkg --set-selections
-
-	# Enable XRDP
-    systemctl enable xrdp && systemctl start xrdp
-} # InstallXRDP
 
 Main "$@"
