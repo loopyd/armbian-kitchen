@@ -7,12 +7,6 @@
 # The common reason the issue tracker is filled with RTL8852BE issues is because the vendor
 # kernel itself is a mess.  This brings order to the chaos, and your issue trackers.  :-)
 
-extension_prepare_config__prepare_rtl8852be_fix() {
-
-	add_packages_to_image armbian-firmware-full
-
-}
-
 pre_customize_image__rtl8852be_fix() {
 
 	display_alert "Installing RTL8852BE service..." "${EXTENSION}" "info"
