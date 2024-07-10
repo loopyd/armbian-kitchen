@@ -1,0 +1,19 @@
+#cloud-config
+
+# You can also check the documentation here: https://cloudinit.readthedocs.io/en/latest/reference/examples.html
+hostname: grassypi
+create_hostname_file: true
+locale: en_US.UTF-8
+timezone: US/Mountain
+
+users:
+  - name: grassi
+    gecos: Grass Node Operator
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    selinux_user: staff_u
+    lock_passwd: false
+    passwd: $6$rounds=4096$HhCfD0ogM.96.emz$FgQhSITJ1BhfkEv7f1TgqoyvPlTvuY7HGZsBAJmgS3fCDFT69wX/P1aWg29PARfXJEaPAkDl1XnxI4OXpQUmW.
+    shell: /bin/bash
+
+package_update: true

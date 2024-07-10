@@ -14,6 +14,6 @@ DISABLE_IPV6=false
 ROOTFS_TYPE=btrfs
 BTRFS_COMPRESSION=zstd:7
 EXTRAWIFI=yes
-EXT=mesa-vpu,xrdp
+EXT=mesa-vpu,xrdp,cloud-init
 BUILD_KSRC=yes
 INSTALL_KSRC=yes

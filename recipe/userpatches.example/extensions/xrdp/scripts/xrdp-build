@@ -1,0 +1,846 @@
+#!/usr/bin/env bash
+declare -ra CARGS=($@)
+CSCRIPT_DIR=$(dirname $0)
+
+# Environment variables used by the script
+ACTION=${ACTION:-}
+BUILD_DIR=${BUILD_DIR:-}
+PULSE_DIR=${PULSE_DIR:-}
+BUILD_REF=${BUILD_REF:-}
+
+# Terminal colors
+C_RED=$(tput setaf 1)
+C_GREEN=$(tput setaf 2)
+C_YELLOW=$(tput setaf 3)
+C_BLUE=$(tput setaf 4)
+C_MAGENTA=$(tput setaf 5)
+C_CYAN=$(tput setaf 6)
+C_WHITE=$(tput setaf 7)
+C_RESET=$(tput sgr0)
+C_BOLD=$(tput bold)
+C_UNDERLINE=$(tput smul)
+
+####################################################################################################
+# Logging functions
+####################################################################################################
+
+# Display program error messages
+function error() {
+	echo -e "${C_RED}${C_BOLD}Error:${C_RESET} $1" 1>&2
+}
+
+# Display program warning messages
+function warning() {
+	echo -e "${C_YELLOW}${C_BOLD}Warning:${C_RESET} $1" 1>&2
+}
+
+# Display program info messages
+function info() {
+	echo -e "${C_CYAN}${C_BOLD}Info:${C_RESET} $1"
+}
+
+# Display program success messages
+function success() {
+	echo -e "${C_GREEN}${C_BOLD}Success:${C_RESET} $1"
+}
+
+# Error trap function
+function error_trap() {
+	local RET=$?
+	if [ $RET -ne 0 ]; then
+		error "Script failed with exit code: $RET"
+	fi
+	exit $RET
+}
+trap error_trap EXIT ERR SIGINT SIGTERM
+
+####################################################################################################
+# CLI functions
+####################################################################################################
+
+# usage: Display program usage information
+function usage() {
+	cat <<-'EOF'
+		XRDP Build Program - v1.0.0
+		by loopyd <loopyd@github.com> 2024 | GPLv3.0 permissive license
+
+	EOF
+	case "$ACTION" in
+	xrdp)
+		cat <<-'EOF'
+			Usage: $0 xrdp [options]
+
+			XRDP Options:
+				-b, --build-dir <dir>    Build directory for xrdp
+				-r, --ref <ref>          Git reference for the xrdp repository
+
+			Common Options:
+				-h, --help               Display this help and exit
+		EOF
+		;;
+	xorgxrdp)
+		cat <<-'EOF'
+			Usage: $0 xorgxrdp [options]
+
+			XORGXRDP Options:
+				-b, --build-dir <dir>    Build directory for xorgxrdp
+				-r, --ref <ref>          Git reference for the xorgxrdp repository
+
+			Common Options:
+				-h, --help               Display this help and exit 
+		EOF
+		;;
+	pulseaudio)
+		cat <<-'EOF'
+			Usage: $0 pulseaudio [options]
+
+			Pulseaudio Options:
+				-b, --build-dir <dir>    Build directory for pulseaudio
+				-v, --version <version>  Pulseaudio version to build
+
+			Common Options:
+				-h, --help               Display this help and exit
+		EOF
+		;;
+	pulseaudio-module-xrdp)
+		cat <<-'EOF'
+			Usage: $0 pulseaudio-module-xrdp [options]
+
+			Pulseaudio Module XRDP Options:
+				-b, --build-dir <dir>    Build directory for pulseaudio-module-xrdp
+				-p, --pulse-dir <dir>    Pulseaudio source directory
+				-r, --ref <ref>          Git reference for the pulseaudio-module-xrdp repository
+
+			Common Options:
+				-h, --help               Display this help and exit
+		EOF
+		;;
+	*)
+		cat <<-'EOF'
+			Usage: $0 <action> [options]
+
+			Actions:
+				xrdp        Build xrdp
+				xorgxrdp    Build xorgxrdp
+				pulseaudio  Build pulseaudio
+				pulseaudio-module-xrdp  Build pulseaudio module xrdp
+
+			You can run the script with the -h or --help option to get help on the specific action.
+		EOF
+		;;
+	esac
+	exit 1
+}
+
+# parse_args:  Parse command line arguments for the script
+function parse_args() {
+	local ARGS
+	ARGS=($@)
+	if [[ ${#ARGS[@]} -eq 0 ]]; then
+		return 0
+	fi
+	ACTION=${ARGS[0]}
+	if [[ -z $ACTION ]]; then
+		error "No action specified"
+		usage
+	fi
+	ARGS=(${ARGS[@]:1})
+	case "$ACTION" in
+	xrdp)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-b | --build-dir)
+				BUILD_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-r | --ref)
+				BUILD_REF=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	xorgxrdp)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-b | --build-dir)
+				BUILD_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-r | --ref)
+				BUILD_REF=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	pulseaudio)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-b | --build-dir)
+				BUILD_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-v | --version)
+				BUILD_REF=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	pulseaudio-module-xrdp)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-b | --build-dir)
+				BUILD_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-p | --pulse-dir)
+				PULSE_DIR=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-r | --ref)
+				BUILD_REF=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	*)
+		error "Unknown action: $ACTION"
+		usage
+		;;
+	esac
+	return 0
+}
+
+####################################################################################################
+# Git helper functions
+####################################################################################################
+
+# git_parse_ref: Parse a a git reference parameter
+#
+# Usage: git_parse_ref <ref>
+#
+# Arguments:
+#   ref: Git reference to parse
+#
+# Returns:
+#   None
+#
+function git_parse_ref() {
+	declare ref="$1"
+	[[ -z $ref || ($ref != tag:* && $ref != branch:* && $ref != head && $ref != commit:*) ]] && error "Error in configuration; git_ref '${ref}' is not valid" && exit 1
+	ref_type=${ref%%:*}
+	ref_name=${ref##*:}
+	if [[ $ref_type == head ]]; then
+		ref_name=HEAD
+	fi
+}
+
+# improved_git: Improved git function with retry mechanism.
+#
+# Usage: improved_git <git-command>
+#
+# Arguments:
+#   git-command: Git command to run
+#
+# Returns:
+#   None
+#
+function improved_git() {
+	local real_git
+	real_git="$(command -v git)"
+	local retries=3
+	local delay=10
+	local count=0
+	while [ $count -lt $retries ]; do
+		$real_git --no-pager "$@" && return 0
+		count=$((count + 1))
+		warning "improved_git try $count failed, retrying in ${delay} seconds"
+		sleep $delay
+	done
+	error "improved_git, too many retries"
+	return 17
+}
+
+# regular_git: Regular git function with no retry mechanism.
+#
+# Usage: regular_git <git-command>
+#
+# Arguments:
+#   git-command: Git command to run
+#
+# Returns:
+#   None
+#
+function regular_git() {
+	git --no-pager "$@"
+}
+
+# improved_git_fetch: Improved git fetch function with verbose output and no submodules.
+#
+# Usage: improved_git_fetch <url> <ref>
+#
+# Arguments:
+#   url: URL to fetch from
+#   ref: Git reference to fetch
+#
+# Returns:
+#   None
+#
+function improved_git_fetch() {
+	declare -a verbose_params=() && if [[ -t 1 && -n $PS1 ]]; then verbose_params+=("--verbose" "--progress"); fi
+	improved_git fetch "${verbose_params[@]}" --recurse-submodules=no "$@"
+}
+
+# git_ensure_safe_directory: Git ensure safe directory function.
+#
+# Usage: git_ensure_safe_directory <directory>
+#
+# Arguments:
+#   directory: Directory to ensure is safe
+#
+# Returns:
+#   None
+#
+function git_ensure_safe_directory() {
+	if [[ -n "$(command -v git)" ]]; then
+		local git_dir="$1"
+		if [[ -e "$1/.git" ]]; then
+			info "git: Marking all directories as safe, which should include $git_dir"
+			regular_git config --global --get safe.directory "$1" >/dev/null || regular_git config --global --add safe.directory "$1"
+		fi
+	else
+		warning "git not installed. Skipping safe directory check."
+	fi
+}
+
+# fetch_from_repo: Overcomplicated fetch from git repository
+#
+# Usage: fetch_from_repo <url> <dir> <ref> [<ref_subdir>]
+#
+# Arguments:
+#   url: URL to fetch from
+#   dir: Target directory to fetch to
+#   ref: Git reference to fetch
+#   ref_subdir: Fetch to a subdirectory named after the reference? (yes/no)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function fetch_from_repo() {
+	info "fetch_from_repo $*"
+	local url=$1
+	local dir=$2
+	local ref=$3
+	local ref_subdir=$4
+	local git_work_dir
+	declare ref_type ref_name
+	git_parse_ref "$ref"
+	info "Getting sources from Git $dir $ref_name"
+	local workdir=$dir
+	if [[ "${ref_subdir}" == "yes" ]]; then
+		workdir=$dir/$ref_name
+	fi
+	git_work_dir="${workdir}"
+	info "Git working dir ${git_work_dir}"
+	mkdir -p "${git_work_dir}" || {
+		error "No path or no write permission ${git_work_dir}"
+		return 1
+	}
+	pushd "${git_work_dir}" || {
+		error "Failed to change to directory ${git_work_dir}"
+		return 1
+	}
+	git_ensure_safe_directory "${git_work_dir}"
+	if [[ ! -d ".git" || "$(git rev-parse --git-dir)" != ".git" ]]; then
+		info "Initializing empty git local copy git init: $dir $ref_name"
+		regular_git init -q .
+	fi
+	local changed=false
+	local local_hash
+	local_hash=$(git rev-parse @ 2>/dev/null || true)
+	local remote_hash
+	case $ref_type in
+	branch)
+		remote_hash=$(git ls-remote -h "${url}" "$ref_name" | head -1 | cut -f1)
+		[[ -z $local_hash || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		;;
+	tag)
+		remote_hash=$(git ls-remote -t "${url}" "$ref_name" | cut -f1)
+		if [[ -z $local_hash || "${local_hash}" != "${remote_hash}" ]]; then
+			remote_hash=$(git ls-remote -t "${url}" "$ref_name^{}" | cut -f1)
+			[[ -z $remote_hash || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		fi
+		;;
+	head)
+		remote_hash=$(git ls-remote "${url}" HEAD | cut -f1)
+		[[ -z $local_hash || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		;;
+	commit)
+		remote_hash="${ref_name}"
+		[[ -z $local_hash || $local_hash == "@" || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		;;
+	esac
+	local checkout_from="HEAD"
+	if [[ "${changed}" == "true" ]]; then
+		info "Fetching updates from remote repository $dir $ref_name"
+		case $ref_type in
+		branch)
+			improved_git_fetch --no-tags "${url}" "${ref_name}"
+			;;
+		tag)
+			improved_git_fetch --no-tags "${url}" tags/"${ref_name}"
+			;;
+		head)
+			improved_git_fetch --no-tags "${url}" HEAD
+			;;
+		commit)
+			improved_git_fetch --no-tags "${url}" "${ref_name}"
+			;;
+		esac
+		checkout_from="FETCH_HEAD"
+	fi
+	info "git: Fetch from remote completed, rev-parsing... '$dir' '$ref_name' '${checkout_from}'"
+	fetched_revision="$(git rev-parse "${checkout_from}")"
+	if [[ "${do_checkout:-"yes"}" == "yes" ]]; then
+		info "git checking out revision SHA ${fetched_revision}"
+		regular_git checkout -f -q "${fetched_revision}"
+		checked_out_revision="${fetched_revision}"
+		info "git cleaning ${checked_out_revision}"
+		regular_git clean -q -d -f
+		if [[ -f .gitmodules ]]; then
+			if [[ "${GIT_SKIP_SUBMODULES}" == "yes" ]]; then
+				info "Skipping submodules GIT_SKIP_SUBMODULES=yes"
+			else
+				info "Updating submodules"
+				for i in $(git config -f .gitmodules --get-regexp path | awk '{ print $2 }'); do
+					pushd "${git_work_dir}" || {
+						error "Failed to change to directory ${git_work_dir}"
+						return 1
+					}
+					local surl sref branch_ref tag_ref commit_ref hash_ref
+					surl=$(git config -f .gitmodules --get "submodule.$i.url")
+					# Skip if no URL is found
+					[[ -z $surl ]] && continue
+					# Get the submodule references
+					branch_ref=$(git config -f .gitmodules --get "submodule.$i.branch" || true)
+					tag_ref=$(git config -f .gitmodules --get "submodule.$i.tag" || true)
+					commit_ref=$(git config -f .gitmodules --get "submodule.$i.commit" || true)
+					hash_ref=$(git config -f .gitmodules --get "submodule.$i.hash" || true)
+					# Check immutables first
+					[[ -n $commit_ref && $commit_ref != "." && "x${sref}x" == "xx" ]] && sref="commit:$commit_ref"
+					[[ -n $hash_ref && $hash_ref != "." && "x${sref}x" == "xx" ]] && sref="commit:$hash_ref"
+					# Check mutables
+					[[ -n $branch_ref && $branch_ref != "." && "x${sref}x" == "xx" ]] && sref="branch:$branch_ref"
+					[[ -n $tag_ref && $tag_ref != "." && "x${sref}x" == "xx" ]] && sref="tag:$tag_ref"
+					# Default to head if nothing found
+					[[ -z $sref || "x${sref}x" == "xx" ]] && sref="head"
+					info "Updating submodule $i - $surl - $sref"
+					git_ensure_safe_directory "$workdir/$i"
+					fetch_from_repo "$surl" "$workdir/$i" "$sref" "no"
+					popd || true
+				done
+			fi
+		fi
+	else
+		info "Skipping checkout $dir $ref_name ${checked_out_revision}"
+	fi
+	popd || true
+	return 0
+}
+
+# fetch_from_url: Overcomplicated fetch from a web URL
+#
+# Usage: fetch_from_url <url> <target_dir> [<strip_components>]
+#
+# Arguments:
+#   url: URL to fetch from
+#   target_dir: Target directory to put the fetched file(s)
+#   strip_components: Number of leading path components to strip, applies to archives only
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function fetch_from_url() {
+	local url=$1
+	local target_dir=$2
+	local strip_components=${3:-0}
+	if [ -z "$url" ] || [ -z "$target_dir" ]; then
+		error "URL and/or target directory not specified"
+		return 1
+	fi
+	local archive_name=$(basename "$url")
+	local temp_dir=$(mktemp -d)
+	local extract_dir="$temp_dir/extracted"
+	info "Downloading $url to $temp_dir/$archive_name"
+	curl -L -o "$temp_dir/$archive_name" "$url"
+	if [ $? -ne 0 ]; then
+		error "Failed to download $url"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	mkdir -p "$extract_dir"
+	local extension="${archive_name##*.}"
+	info "Extracting $temp_dir/$archive_name to $extract_dir"
+	case "$extension" in
+	tar.gz | tgz | gz)
+		tar --strip-components=$strip_components -xzf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	tar.bz2 | tbz2 | bz2)
+		tar --strip-components=$strip_components -xjf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	tar.xz | txz | xz)
+		tar --strip-components=$strip_components -xJf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	zip)
+		unzip -d "$extract_dir" "$temp_dir/$archive_name"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	rar)
+		unrar x "$temp_dir/$archive_name" "$extract_dir"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	7z)
+		7z x "$temp_dir/$archive_name" -o"$extract_dir"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	*)
+		warning "Unrecognized archive format: $extension. Downloading file as is."
+		if [ -f "$target_dir" ]; then
+			warning "File $target_dir already exists, overwriting"
+			rm -f "$target_dir"
+		fi
+		mv "$temp_dir/$archive_name" "$target_dir"
+		rm -rf "$temp_dir"
+		success "Fetched and moved $url to $target_dir"
+		return 0
+		;;
+	esac
+	if [ $? -ne 0 ]; then
+		error "Failed to extract $temp_dir/$archive_name"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	info "Syncing extracted files from $extract_dir to $target_dir"
+	rsync -av --delete "$extract_dir/" "$target_dir/"
+	if [ $? -ne 0 ]; then
+		error "Failed to sync extracted files to $target_dir"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	rm -rf "$temp_dir"
+	success "Fetched, extracted, and synced $url to $target_dir"
+	return 0
+}
+
+####################################################################################################
+# Build functions
+####################################################################################################
+
+# build_xrdp: Build xrdp
+#
+# Usage: build_xrdp <build_dir> <ref>
+#
+# Arguments:
+#   build_dir: Build directory for xrdp
+#   ref: Git reference for the xrdp repository
+#
+# Returns:
+#   0 on success, 1 on failure
+function build_xrdp() {
+	local _build_dir=$1
+	if [ -z "${_build_dir}" ]; then
+		error "Build directory not specified"
+		return 1
+	fi
+	shift 1
+	local _ref=$1
+	if [ -z "${_ref}" ]; then
+		error "Git ref not specified"
+		return 1
+	fi
+	shift 1
+	fetch_from_repo "https://github.com/neutrinolabs/xrdp.git" "${_build_dir}" "${_ref}" "no" || {
+		error "Failed to fetch/update xrdp sources"
+		return 1
+	}
+	pushd ${_build_dir}
+	./bootstrap
+	./configure \
+		--with-systemdsystemunitdir=/usr/lib/systemd/system \
+		--enable-vsock \
+		--enable-glamor \
+		--enable-rfxcodec \
+		--enable-mp3lame \
+		--enable-fdkaac \
+		--enable-opus \
+		--enable-pixman \
+		--enable-fuse \
+		--enable-jpeg \
+		--enable-tjpeg \
+		--enable-ipv6 \
+		--enable-x264 \
+		--enable-rdpsndaudin \
+		--enable-utmp \
+		--enable-ibus \
+		--with-freetype2=yes \
+		--with-imlib2=yes || {
+		error "Failed to configure xrdp"
+		popd
+		return 1
+	}
+	make -j$(nproc) || {
+		error "Failed to build xrdp"
+		popd
+		return 1
+	}
+	make install || {
+		error "Failed to install xrdp"
+		popd
+		return 1
+	}
+	success "xrdp built successfully"
+	popd
+	return 0
+}
+
+# build_xorgxrdp: Build xorgxrdp
+#
+# Usage: build_xorgxrdp <build_dir> <ref>
+#
+# Arguments:
+#   build_dir: Build directory for xorgxrdp
+#   ref: Git reference for the xorgxrdp repository
+#
+# Returns:
+#   0 on success, 1 on failure
+function build_xorgxrdp() {
+	local _build_dir=$1
+	if [ -z "${_build_dir}" ]; then
+		echo "Build directory not specified"
+		return 1
+	fi
+	if [ ! -d "${_build_dir}" ]; then
+		echo "Build directory: ${_build_dir} does not exist"
+		return 1
+	fi
+	shift 1
+	local _ref=$1
+	if [ -z "${_ref}" ]; then
+		error "Git ref not specified"
+		return 1
+	fi
+	shift 1
+	fetch_from_repo "https://github.com/neutrinolabs/xorgxrdp.git" "${_build_dir}" "${_ref}" "no" || {
+		error "Failed to fetch/update xorgxrdp sources"
+		return 1
+	}
+	pushd ${_build_dir}
+	./bootstrap || {
+		error "Failed to bootstrap xorgxrdp"
+		popd
+		return 1
+	}
+	./configure --enable-lrandr || {
+		error "Failed to configure xorgxrdp"
+		popd
+		return 1
+	}
+	make -j$(nproc) || {
+		error "Failed to build xorgxrdp"
+		popd
+		return 1
+	}
+	make install || {
+		error "Failed to install xorgxrdp"
+		popd
+		return 1
+	}
+	popd
+	success "xorgxrdp built successfully"
+	return 0
+}
+
+# build_pulseaudio: Build pulseaudio
+#
+# Usage: build_pulseaudio <build_dir> <version>
+#
+# Arguments:
+#   build_dir: Build directory for pulseaudio
+#   version: Pulseaudio version to build
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function build_pulseaudio() {
+	local _build_dir=$1
+	if [ -z "${_build_dir}" ]; then
+		echo "Build directory not specified"
+		return 1
+	fi
+	if [ ! -d "${_build_dir}" ]; then
+		echo "Build directory: ${_build_dir} does not exist"
+		return 1
+	fi
+	shift 1
+	local _version=$1
+	if [ -z "${_version}" ]; then
+		error "Version not specified"
+		return 1
+	fi
+	fetch_from_url "https://freedesktop.org/software/pulseaudio/releases/pulseaudio-${_version}.tar.xz" "${_build_dir}" 1 || {
+		error "Failed to fetch/update pulseaudio sources"
+		return 1
+	}
+	pushd ${_build_dir}
+	meson setup build || {
+		error "Failed to configure pulseaudio"
+		popd
+		return 1
+	}
+	ninja -C build || {
+		error "Failed to build pulseaudio"
+		popd
+		return 1
+	}
+	ldconfig || {
+		error "Failed to update library cache"
+		popd
+		return 1
+	}
+	popd
+	success "Pulseaudio built successfully"
+	return 0
+}
+
+# build_pulseaudio_module_xrdp: Build pulseaudio module xrdp
+#
+# Usage: build_pulseaudio_module_xrdp <build_dir> <ref> <pulse_dir>
+#
+# Arguments:
+#   build_dir: Build directory for pulseaudio-module-xrdp
+#   ref: Git reference for the pulseaudio-module-xrdp repository
+#   pulse_dir: Pulseaudio source directory
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function build_pulseaudio_module_xrdp() {
+	local _build_dir=$1
+	if [ -z "${_build_dir}" ]; then
+		echo "Build directory not specified"
+		return 1
+	fi
+	if [ ! -d "${_build_dir}" ]; then
+		echo "Build directory: ${_build_dir} does not exist"
+		return 1
+	fi
+	shift 1
+	local _ref=$1
+	if [ -z "${_ref}" ]; then
+		error "Git ref not specified"
+		return 1
+	fi
+	shift 1
+	local _pulse_dir=$1
+	if [ -z "${_pulse_dir}" ]; then
+		echo "Pulseaudio source directory not specified"
+		return 1
+	fi
+	if [ ! -d "${_pulse_dir}" ]; then
+		echo "Pulseaudio source directory: ${_pulse_dir} does not exist"
+		return 1
+	fi
+	shift 1
+	fetch_from_repo "https://github.com/neutrinolabs/pulseaudio-module-xrdp.git" "${_build_dir}" "${_ref}" "no" || {
+		error "Failed to fetch/update pulseaudio-module-xrdp sources"
+		return 1
+	}
+	pushd ${_build_dir}
+	./bootstrap || {
+		error "Failed to bootstrap pulseaudio-module-xrdp"
+		popd
+		return 1
+	}
+	./configure PULSE_DIR=${_pulse_dir} || {
+		error "Failed to configure pulseaudio-module-xrdp"
+		popd
+		return 1
+	}
+	make -j$(nproc) || {
+		error "Failed to build pulseaudio-module-xrdp"
+		popd
+		return 1
+	}
+	make install || {
+		error "Failed to install pulseaudio-module-xrdp"
+		popd
+		return 1
+	}
+	popd
+	success "Pulseaudio module xrdp built successfully"
+	return 0
+}
+
+####################################################################################################
+# Main program
+####################################################################################################
+
+parse_args ${CARGS[*]}
+case "$ACTION" in
+xrdp)
+	build_xrdp ${BUILD_DIR} ${BUILD_REF} || exit $?
+	;;
+xorgxrdp)
+	build_xorgxrdp ${BUILD_DIR} ${BUILD_REF} || exit $?
+	;;
+pulseaudio)
+	build_pulseaudio ${BUILD_DIR} ${BUILD_REF} || exit $?
+	;;
+pulseaudio-module-xrdp)
+	build_pulseaudio_module_xrdp ${BUILD_DIR} ${BUILD_REF} ${PULSE_DIR} || exit $?
+	;;
+*)
+	error "Unknown action: $ACTION"
+	usage
+	;;
+esac
