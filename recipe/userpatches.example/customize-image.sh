@@ -228,7 +228,6 @@ UnattendedStorageBenchmark() {
 
 RsyncOverlay()
 {	
-	apt-get -qqy install rsync
 	echo "Resyncing overlay files..."
 	rsync -av /tmp/overlay/ /
 	echo "Operation completed."
