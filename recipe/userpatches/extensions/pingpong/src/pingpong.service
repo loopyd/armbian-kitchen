@@ -1,0 +1,15 @@
+[Unit]
+Description=Ping Pong Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env pingpong-mgr start
+ExecStop=/usr/bin/env pingpong-mgr stop
+ExecRestart=/usr/bin/env pingpong-mgr restart
+User=%i
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=multiuser.target

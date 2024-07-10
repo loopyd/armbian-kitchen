@@ -1,0 +1,663 @@
+#!/usr/bin/env bash
+
+declare -ra CARGS=($@)
+CSCRIPT_DIR=$(dirname $0)
+
+# Environment variables used by the script
+ACTION=${ACTION:-}
+PINGPONG_INSTALL_PREFIX=${PINGPONG_INSTALL_PREFIX:-/usr/local}
+
+# Terminal colors
+C_RED=$(tput setaf 1)
+C_GREEN=$(tput setaf 2)
+C_YELLOW=$(tput setaf 3)
+C_BLUE=$(tput setaf 4)
+C_MAGENTA=$(tput setaf 5)
+C_CYAN=$(tput setaf 6)
+C_WHITE=$(tput setaf 7)
+C_RESET=$(tput sgr0)
+C_BOLD=$(tput bold)
+C_UNDERLINE=$(tput smul)
+
+####################################################################################################
+# Logging functions
+####################################################################################################
+
+# Display program error messages
+function error() {
+	echo -e "${C_RED}${C_BOLD}Error:${C_RESET} $1" 1>&2
+}
+
+# Display program warning messages
+function warning() {
+	echo -e "${C_YELLOW}${C_BOLD}Warning:${C_RESET} $1" 1>&2
+}
+
+# Display program info messages
+function info() {
+	echo -e "${C_CYAN}${C_BOLD}Info:${C_RESET} $1"
+}
+
+# Display program success messages
+function success() {
+	echo -e "${C_GREEN}${C_BOLD}Success:${C_RESET} $1"
+}
+
+# Error trap function
+function error_trap() {
+	local RET=$?
+	if [ $RET -ne 0 ]; then
+		error "Script failed with exit code: $RET"
+	fi
+	exit $RET
+}
+trap error_trap EXIT ERR SIGINT SIGTERM
+
+####################################################################################################
+# CLI functions
+####################################################################################################
+
+# usage: Display program usage information
+function usage() {
+	cat <<-'EOF'
+		PingPong Manager Program v1.0.0
+		by loopyd <loopyd@github.com> 2024 | GPLv3.0 permissive license
+
+	EOF
+	case "$ACTION" in
+	install)
+		cat <<-'EOF'
+			Usage: $0 install [options]
+
+			Install Options:
+				-i, --install-prefix        Installation directory prefix
+			
+			Core Options:
+				-h, --help          		Display this help message
+		EOF
+		;;
+	uninstall)
+		cat <<-'EOF'
+			Usage: $0 uninstall [options]
+
+			Uninstall Options:
+				None available
+
+			Core Options:
+				-h, --help          		Display this help message
+		EOF
+		;;
+	start)
+		cat <<-'EOF'
+			Usage: $0 start [options]
+
+			Start Options:
+				None available
+
+			Core Options:
+				-h, --help          		Display this help message
+		EOF
+		;;
+	stop)
+		cat <<-'EOF'
+			Usage: $0 stop [options]
+
+			Stop Options:
+				None available
+			
+			Core Options:
+				-h, --help          		Display this help message
+		EOF
+		;;
+	restart)
+		cat <<-'EOF'
+			Usage: $0 restart [options]
+
+			Restart Options:
+				None available
+
+			Core Options:
+				-h, --help          		Display this help message
+		EOF
+		;;
+	*)
+		cat <<-'EOF'
+			Usage: $0 <action> [options]
+
+			Actions:
+				install          		Install pingpong to the system
+				uninstall        		Uninstall pingpong from the system
+				start           		Start the pingpong service
+				stop            		Stop the pingpong service
+				restart         		Restart the pingpong service
+
+			You can run the script with the -h or --help option to get help on the specific action.
+		EOF
+		;;
+	esac
+	exit 1
+}
+
+# parse_args:  Parse command line arguments for the script
+function parse_args() {
+	local ARGS
+	ARGS=($@)
+	if [[ ${#ARGS[@]} -eq 0 ]]; then
+		return 0
+	fi
+	ACTION=${ARGS[0]}
+	if [[ -z $ACTION ]]; then
+		error "No action specified"
+		usage
+	fi
+	ARGS=(${ARGS[@]:1})
+	case "$ACTION" in
+	install)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-i | --install-prefix)
+				PINGPONG_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	uninstall)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	start)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	stop)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	restart)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	*)
+		error "Unknown action: $ACTION"
+		usage
+		;;
+	esac
+	return 0
+}
+
+####################################################################################################
+# Helper functions
+####################################################################################################
+
+# fetch_from_url: Overcomplicated fetch from a web URL
+#
+# Usage: fetch_from_url <url> <target_dir> [<strip_components>]
+#
+# Arguments:
+#   url: URL to fetch from
+#   target_dir: Target directory to put the fetched file(s)
+#   strip_components: Number of leading path components to strip, applies to archives only
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function fetch_from_url() {
+	local url=$1
+	local target_dir=$2
+	local strip_components=${3:-0}
+	if [ -z "$url" ] || [ -z "$target_dir" ]; then
+		error "URL and/or target directory not specified"
+		return 1
+	fi
+	local archive_name=$(basename "$url")
+	local temp_dir=$(mktemp -d)
+	local extract_dir="$temp_dir/extracted"
+	info "Downloading $url to $temp_dir/$archive_name"
+	curl -L -o "$temp_dir/$archive_name" "$url"
+	if [ $? -ne 0 ]; then
+		error "Failed to download $url"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	mkdir -p "$extract_dir"
+	local extension="${archive_name##*.}"
+	info "Extracting $temp_dir/$archive_name to $extract_dir"
+	case "$extension" in
+	tar.gz | tgz | gz)
+		tar --strip-components=$strip_components -xzf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	tar.bz2 | tbz2 | bz2)
+		tar --strip-components=$strip_components -xjf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	tar.xz | txz | xz)
+		tar --strip-components=$strip_components -xJf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	zip)
+		unzip -d "$extract_dir" "$temp_dir/$archive_name"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	rar)
+		unrar x "$temp_dir/$archive_name" "$extract_dir"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	7z)
+		7z x "$temp_dir/$archive_name" -o"$extract_dir"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	*)
+		warning "Unrecognized archive format: $extension. Downloading file as is."
+		if [ -f "$target_dir" ]; then
+			warning "File $target_dir already exists, overwriting"
+			rm -f "$target_dir"
+		fi
+		mv "$temp_dir/$archive_name" "$target_dir"
+		rm -rf "$temp_dir"
+		success "Fetched and moved $url to $target_dir"
+		return 0
+		;;
+	esac
+	if [ $? -ne 0 ]; then
+		error "Failed to extract $temp_dir/$archive_name"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	info "Syncing extracted files from $extract_dir to $target_dir"
+	rsync -av --delete "$extract_dir/" "$target_dir/"
+	if [ $? -ne 0 ]; then
+		error "Failed to sync extracted files to $target_dir"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	rm -rf "$temp_dir"
+	success "Fetched, extracted, and synced $url to $target_dir"
+	return 0
+}
+
+# run_logged_program: Run a program with logging and controlled by a PID file
+#
+# Usage: run_logged_program <program_name> [<username>] [<program_args>]
+#
+# Arguments:
+#   program_name: Name of the program to run	
+#   username: User to run the program as (defaults to root)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+run_logged_program_with_pid() {
+    local _program_name=$1
+	if [ -z "${_program_name}" ]; then
+		error "No program name specified"
+		return 1
+	fi
+	shift 1
+    local _username=$1
+	if [ -z "${_username}" ]; then
+		warning "No user name specified, defaulting to root"
+		_username="root"
+	fi
+    shift 1
+    declare -a _program_args=($*)
+	local _log_dir _pid_dir  _pid_file _log_file
+	_log_dir="/var/log/${_program_name}"
+	if [ ! -d "$_log_dir" ]; then
+		mkdir -p "$_log_dir"
+		chmod 755 "$_log_dir"
+		chown root:root "$_log_dir"
+	fi
+	_pid_dir="/var/run/${_program_name}"
+	if [ ! -d "${_pid_dir}" ]; then
+		mkdir -p "${_pid_dir}"
+		chmod 1777 "${_pid_dir}"
+	fi
+	_pid_file="${_pid_dir}/${_username}_${_program_name}.pid"
+    _log_file="${_log_dir}/${_username}_${_program_name}.log"
+    if [ -f "${_pid_file}" ] && kill -0 $(cat "${_pid_file}") 2>/dev/null; then
+        warning "${_program_name} is already running for user ${_username}."
+        return 0
+    fi
+    sudo -u "${_username}" bash -c "nohup ${_program_name} ${_program_args[*]} >> \"${_log_file}\" 2>&1 & echo \$! > \"${_pid_file}\""
+    chown "${_username}:${_username}" "${_log_file}"
+    chmod 600 "${_log_file}"
+    info "${_program_name} started with PID $(cat "${_pid_file}") as user ${_username}"
+}
+
+# exit_logged_program_with_pid: Exit a program ran by run_logged_program_with_pid
+#
+# Usage: exit_logged_program_with_pid <program_name> [<username>] [<program_args>]
+#
+# Arguments:
+#   program_name: Name of the program to exit
+#   username: User the program is running as
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+exit_logged_program_with_pid() {
+    local _program_name=$1
+	if [ -z "${_program_name}" ]; then
+		error "No program name specified"
+		return 1
+	fi
+	shift 1
+    local _username=$1
+	if [ -z "${_username}" ]; then
+		warning "No user name specified, defaulting to root"
+		_username="root"
+	fi
+    shift 1
+	local _log_dir _pid_dir _pid_file _pid
+	_log_dir="/var/log/${_program_name}"
+	if [ ! -d "${_log_dir}" ]; then
+		warning "Log folder: ${_log_dir} does not exist, no logs have been output."
+	fi
+	_pid_dir="/var/run/${_program_name}"
+	if [ ! -d "${_pid_dir}" ]; then
+		mkdir -p "${_pid_dir}"
+		chmod 1777 "${_pid_dir}"
+	fi
+	_pid_file="${_pid_dir}/${_username}_${_program_name}.pid"
+    if [ ! -f "${_pid_file}" ]; then
+        error "No PID file found for ${_program_name} for user ${_username}."
+        return 1
+    fi
+    _pid=$(cat "${_pid_file}")
+    if kill -0 "${_pid}" 2>/dev/null; then
+        kill "${_pid}" && success "${_program_name} with PID ${_pid} has been terminated for user ${_username}."
+        rm -f "${_pid_file}"
+    else
+    	warning "No process found with PID ${_pid}."
+        rm -f "${_pid_file}"
+    fi
+	return 0
+}
+
+####################################################################################################
+# Core functions
+####################################################################################################
+
+install_pingpong() {
+	local _install_dir
+	_install_dir="$1"
+	if [ -z "${_install_dir}" ]; then
+		error "No installation directory specified."
+		return 1
+	fi
+	if [ ! -d "${_install_dir}" ]; then
+		error "Installation directory ${_install_dir} does not exist"
+		return 1
+	fi
+	if ! echo $PATH | grep -q ${_install_dir}; then
+		error "Installation directory ${_install_dir} is not on PATH"
+		return 1
+	fi
+	if [ -f "${_install_dir}/bin/PINGPONG" ]; then
+		warning "PINGPONG binary already exists in ${_install_dir}/bin"
+		return 0
+	fi
+	shift 1
+	info "Installing pingpong to ${_install_dir}/bin"
+	fetch_from_url "https://pingpong-build.s3.ap-southeast-1.amazonaws.com/linux/latest/PINGPONG" "${_install_dir}/bin" 0 || {
+		error "Failed to fetch pingpong binary"
+		return 1
+	}
+	chmod +x "${_install_dir}/bin/PINGPONG" || {
+		error "Failed to set execute permissions on ${_install_dir}/bin/PINGPONG"
+		return 1
+	}
+}
+
+uninstall_pingpong() {
+	local _install_dir
+	if [ "$#" -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	if [[ -z "${_install_dir}" || "x${_install_dir}x" == "xx" ]]; then
+		warning "No install dir specified, attempting to use which."
+		_install_dir=$(dirname "$(which PINGPONG || echo \"\")" || echo "")
+		if [[ -z "${_install_dir}" || "x${_install_dir}x" == "xx" ]]; then
+			error "Failed to autodetect location of PINGPONG program"
+			return 1
+		fi
+	fi
+	rm -f ${_install_dir}/PINGPONG || {
+		error "Failed to remove PINGPONG binary."
+		return 1
+	}
+	return 0
+}
+
+# load_config: Load pingpong configuration from a JSON file
+#
+# Usage: load_pingpong_config <config_file>
+#
+# Arguments:
+#   config_file: JSON configuration file to load into pingpong
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+# Notes:
+#
+# We don't know why pingpong chose not to allow configuration by json (chinese engineering?) so we
+# implement this workaround to load the configuration from a json file into pingpong.  This allows
+# much easier management in Linux environments.
+load_pingpong_config() {
+	local _config_file=$1
+	if [ ! -f "$_config_file" ]; then
+		error "Configuration file $_config_file does not exist"
+		return 1
+	fi
+	local _device_key _aiog_token _aioz_token _grass_token
+	_device_key=$(jq -r '.device_key' $_config_file 2>/dev/null || echo "")
+	_aiog_token=$(jq -r '.aiog_token' $_config_file 2>/dev/null || echo "")
+	_aioz_token=$(jq -r '.aioz_token' $_config_file 2>/dev/null || echo "")
+	_grass_token=$(jq -r '.grass_token' $_config_file 2>/dev/null || echo "")
+	if [[ -n "${_device_key}" && "x${_device_key}x" != "xx" ]]; then
+		info "Setting device key"
+		eval "${_install_dir}/PINGPONG config --key=${_device_key}" || {
+			error "Failed to set device key"
+			return 1
+		}
+	fi
+	if [[ -n "${_aiog_token}" && "x${_aiog_token}x" != "xx" ]]; then
+		info "Setting AI0G token"
+		eval "${_install_dir}/PINGPONG config --0g=${_aiog_token}" || {
+			error "Failed to set AIoG token"
+			return 1
+		}
+	fi
+	if [[ -n "${_aioz_token}" && "x${_aioz_token}x" != "xx" ]]; then
+		info "Setting AIOZ token"
+		eval "${_install_dir}/PINGPONG config --aioz=${_aioz_token}" || {
+			error "Failed to set Aioz token"
+			return 1
+		}
+	fi
+	if [[ -n "${_grass_token}" && "x${_grass_token}x" != "xx" ]]; then
+		info "Setting Grass token"
+		eval "${_install_dir}/PINGPONG config --grass=${_grass_token}" || {
+			error "Failed to set Grass token"
+			return 1
+		}
+	fi
+}
+
+# save_pingpong_config: Save pingpong configuration to a JSON file
+#
+# Usage: save_pingpong_config <config_file> [<device_key> [<aiog_token> [<aioz_token> [<grass_token>]]]
+#
+# Arguments:
+#   config_file: JSON configuration file to save pingpong configuration
+#   device_key: Device key hash
+#   aiog_token: AI0G token
+#   aioz_token: AIOZ token
+#   grass_token: Grass user token
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+# Notes:
+#
+# We don't know why pingpong chose not to allow configuration by json (chinese engineering?) so we
+# implement this workaround to save the configuration to a json file and then load it back into
+# pingpong.  This allows much easier management in Linux environments.
+#
+save_pingpong_config() {
+	local _config_file=$1
+	if [ ! -f "$_config_file" ]; then
+		cat <<- 'EOF' >${_config_file}
+{
+	"device_key": "",
+	"aiog_token": "",
+	"aioz_token": "",
+	"grass_token": ""
+}
+EOF
+		return 1
+	fi
+	if [ $# -gt 0 ]; then
+		local _device_key=$1
+		shift 1
+	fi
+	if [ $# -gt 0 ]; then
+		local _aiog_token=$1
+		shift 1
+	fi
+	if [ $# -gt 0 ]; then
+		local _aioz_token=$1
+		shift 1
+	fi
+	if [ $# -gt 0 ]; then
+		local _grass_token=$1
+		shift 1
+	fi
+	if [ -n "${_device_key}" ]; then
+		info "Saving device key"
+		jq '.device_key = "'${_device_key}'"' $_config_file >$_config_file.tmp && mv $_config_file.tmp $_config_file || {
+			error "Failed to save device key"
+			return 1
+		}
+	fi
+	if [ -n "${_aiog_token}" ]; then
+		info "Saving AIoG token"
+		jq '.aiog_token = "'${_aiog_token}'"' $_config_file >$_config_file.tmp && mv $_config_file.tmp $_config_file || {
+			error "Failed to save AIoG token"
+			return 1
+		}
+	fi
+	if [ -n "${_aioz_token}" ]; then
+		info "Saving AIOZ token"
+		jq '.aioz_token = "'${_aioz_token}'"' $_config_file >$_config_file.tmp && mv $_config_file.tmp $_config_file || {
+			error "Failed to save AIOZ token"
+			return 1
+		}
+	fi
+	if [ -n "${_grass_token}" ]; then
+		info "Saving Grass token"
+		jq '.grass_token = "'${_grass_token}'"' $_config_file >$_config_file.tmp && mv $_config_file.tmp $_config_file || {
+			error "Failed to save Grass token"
+			return 1
+		}
+	fi
+}
+
+start_pingpong() {
+	local _config_file=$1
+	if [ -z "${_config_file}" ]; then
+		error "No configuration file specified."
+		return 1
+	fi
+	if [ ! -f "${_config_file}" ]; then
+		error "Specified configuration file: ${_config_file} does not exist."
+		return 1
+	fi
+	
+}
+
+####################################################################################################
+# Main program
+####################################################################################################
+
+# prevent this script from being run as anything but root
+if [ "$(id -u)" -ne 0 ]; then
+	error "This script must be run as root" 1>&2
+	exit 1
+fi
+
+parse_args ${CARGS[*]}
+case "$ACTION" in
+install)
+	install_pingpong "$PINGPONG_INSTALL_PREFIX"
+	;;
+uninstall)
+	uninstall_pingpong "$PINGPONG_INSTALL_PREFIX"
+	;;
+start)
+	info "Starting the pingpong service"
+	;;
+stop)
+	info "Stopping the pingpong service"
+	;;
+restart)
+	info "Restarting the pingpong service"
+	;;
+*)
+	error "Unknown action: $ACTION"
+	usage
+	;;
+esac

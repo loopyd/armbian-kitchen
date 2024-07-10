@@ -1,6 +1,6 @@
 # The Recipie Folder
 
-This folder allows you to load in your own recipie cards to automate the kitchen in an unattended manner.  Examples have been provided for you (postfixed by ``.example``) that you can modify as you need.
+This folder allows you to load in your own recipie cards to automate the kitchen in an unattended manner. You can modify the included files as you need to suit your own image.
 
 ## Recipie Cards
 

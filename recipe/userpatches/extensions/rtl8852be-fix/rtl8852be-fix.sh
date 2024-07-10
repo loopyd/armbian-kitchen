@@ -19,10 +19,8 @@ pre_customize_image__rtl8852be_fix() {
 	chroot_sdcard chmod +x "/usr/lib/scripts/rtl8852be-reload.sh" || {
 		exit_with_error "Failed to set execute permissions on rtl8852be-reload.sh"
 	}
-	chroot_sdcard mkdir -p "/usr/lib/systemd/system" || {
-		exit_with_error "Failed to create /usr/lib/systemd/system directory"
-	}
-	run_host_command_logged cp -v "${EXTENSION_DIR}/src/rtl8852be.service" "${SDCARD}/usr/lib/systemd/system/" || {
+	chroot_sdcard mkdir -p "/usr/lib/systemd/system" || true
+	run_host_command_logged cp -v "${EXTENSION_DIR}/src/rtl8852be-reload.service" "${SDCARD}/usr/lib/systemd/system/" || {
 		exit_with_error "Failed to copy rtl8852be.service"
 	}
 
@@ -31,7 +29,7 @@ pre_customize_image__rtl8852be_fix() {
 post_customize_image__rtl8852be_fix() {
 
 	display_alert "Enabling RTL8852BE service..." "${EXTENSION}" "info"
-	chroot_sdcard systemctl enable rtl8852be.service || {
+	chroot_sdcard systemctl enable rtl8852be-reload.service || {
 		exit_with_error "Failed to enable RTL8852BE reload service"
 	}
 
