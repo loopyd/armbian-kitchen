@@ -638,6 +638,7 @@ function build_xrdp() {
 		popd
 		return 1
 	}
+	apt-mark hold xrdp || true
 	success "xrdp built successfully"
 	popd
 	return 0
@@ -696,6 +697,7 @@ function build_xorgxrdp() {
 		return 1
 	}
 	popd
+	apt-mark hold xorgxrdp || true
 	success "xorgxrdp built successfully"
 	return 0
 }

@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 
+# This extension is meant to build XRDP from source and install it on the image.  This is useful
+# for creating a remote desktop server on the image.  This extension will build XRDP, XORGXRDP,
+# Pulseaudio, and the Pulseaudio XRDP module.
+#
+# The caveot to this extension is that it will take a long time to build all the components.  A
+# build-script is provided to automate the build process installed in /usr/local/bin/xrdp-build
+#
+# Should you need to update XRDP or pulseaudio, you can run the build script manually on the
+# target device to target the latest versions.  Please note that to minimize the size of the
+# image, the build dependencies are removed after the build is complete here.  You would have
+# to install the build dependencies manually to build XRDP again.
+
 extension_prepare_config__prepare_xrdp_config() {
 
 	declare -g XRDP_PULSEAUDIO_VERSION="${XRDP_PULSEAUDIO_VERSION:-}"
@@ -11,9 +23,10 @@ extension_prepare_config__prepare_xrdp_config() {
 	XRDP_BUILD_DEPS+=(build-essential make autoconf libtool intltool bison flex autopoint pkg-config nasm ninja-build meson yasm cmake check xutils xsltproc dbus-x11 doxygen gcovr valgrind libglib2.0-dev libcmocka-dev libcmocka0 libxfixes-dev libxrandr-dev libgbm-dev libepoxy-dev libexecs-dev libdbus-1-dev libsystemd-dev libx11-xcb-dev libseat1 xserver-xorg-dev libssl-dev libpam0g-dev libx11-dev libxfixes-dev libxrandr-dev xutils-dev libxml2-dev python3-libxml2 libfuse-dev libcap-dev libgtk-3-dev libltdl-dev libtdb-dev libimlib2-dev libfreetype-dev liblirc-dev liblirc-client0 liblirc0 libudev-dev libudev1 libjson-c-dev liborc-0.4-dev libibus-1.0-dev libxkbfile-dev)
 	XRDP_BUILD_DEPS+=(libjpeg-dev libopus-dev libmp3lame-dev libegl1-mesa-dev libsamplerate0-dev libsamplerate0 libresample1-dev libresample1 libsndfile1-dev libspeex-dev libpulse-dev libpulse0 libfdk-aac-dev libturbojpeg0-dev libjpeg-turbo8-dev libfftw3-dev libasyncns-dev libasound2-dev libspeexdsp-dev libspeexdsp1 libsoxr-dev libsoxr0 libwebrtc-audio-processing-dev libwebrtc-audio-processing1 libx264-dev libavahi-client-dev libavahi-client3 libsbc-dev libsbc1 bluez libbluetooth-dev libbluetooth3 libjack-jackd2-dev)
 	XRDP_BUILD_DEPS+=(libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-alsa gstreamer1.0-tools gstreamer1.0-plugins-rtp gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-bad-apps ubuntu-restricted-extras)
+
 }
 
-pre_customize_image__000_xrdp_tools() {
+pre_customize_image__000_xrdp_init() {
 
 	chroot_sdcard mkdir -p ${XRDP_INSTALL_PREFIX}/src/{xrdp,xorgxrdp,pulseaudio-module-xrdp,pulseaudio}
 	display_alert "Adding XRDP build dependencies..." "${EXTENSION}: tools" "info"
@@ -21,10 +34,10 @@ pre_customize_image__000_xrdp_tools() {
 		exit_with_error "Failed to install XRDP build dependencies"
 	}
 	display_alert "Adding XRDP scripts..." "${EXTENSION}" "info"
-	run_host_command_logged cp -v "${EXTENSION_DIR}/scripts/"* "${SDCARD}${XRDP_INSTALL_PREFIX}/bin/" || {
+	run_host_command_logged cp -v "${EXTENSION_DIR}/src/xrdp-build" "${SDCARD}${XRDP_INSTALL_PREFIX}/bin/" || {
 		exit_with_error "Failed to copy xrdp-build script"
 	}
-	chroot_sdcard chmod +x "${XRDP_INSTALL_PREFIX}/bin/xrdp-"* || {
+	chroot_sdcard chmod +x "${XRDP_INSTALL_PREFIX}/bin/xrdp-build" || {
 		exit_with_error "Failed to set execute permissions on xrdp scripts"
 	}
 
@@ -70,7 +83,19 @@ pre_customize_image__002_xrdp_clean() {
 
 }
 
-post_customize_image__000_xrdp_activate() {
+post_customize_image__xrdp_activate() {
+
+	# Configure xrdp to use the default desktop session
+	display_alert "Configuring XRDP default desktop session..." "${EXTENSION}: build" "info"
+	run_host_command_logged cp -v "${EXTENSION_DIR}/src/90-xrdp-default-desktop.sh" "${SDCARD}/etc/profile.d/" || {
+		exit_with_error "Failed to copy 90-xrdp-default-desktop.sh"
+	}
+	chroot_sdcard chmod +x "/etc/profile.d/90-xrdp-default-desktop.sh" || {
+		exit_with_error "Failed to set execute permissions on 90-xrdp-default-desktop.sh"
+	}
+	run_host_command_logged cp -v "${EXTENSION_DIR}/src/XWrapper.config" "${SDCARD}/etc/X11/Xwrapper.config" || {
+		exit_with_error "Failed to copy XWrapper.config"
+	}
 
 	# Enable XRDP Service
 	display_alert "Enabling XRDP service..." "${EXTENSION}: build" "info"

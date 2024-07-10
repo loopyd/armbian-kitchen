@@ -20,10 +20,10 @@ BUILD_DESKTOP=$4
 Main() {
 	case $RELEASE in
 		jammy)
-			InstallTweaks
+			RsyncOverlay
 			;;
 		noble)
-			InstallTweaks
+			RsyncOverlay
 			;;
 		*)
 			echo "Unsupported release: $RELEASE"
@@ -226,17 +226,12 @@ UnattendedStorageBenchmark() {
 	/usr/local/bin/sd-card-bench.sh &' /etc/rc.local
 } # UnattendedStorageBenchmark
 
-InstallTweaks()
-{
-	apt-get update
-	echo "Resyncing overlay files..."
+RsyncOverlay()
+{	
 	apt-get -qqy install rsync
+	echo "Resyncing overlay files..."
 	rsync -av /tmp/overlay/ /
-	echo "Installing armbian-firmware-full package..."
-	apt-get -qqy install armbian-firmware-full
-	echo "Enabling RTL8852BE driver at boot..."
-	systemctl enable rtl8852be-reload
 	echo "Operation completed."
-} # InstallTweaks
+} # RsyncOverlay
 
 Main "$@"
