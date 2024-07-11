@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+enable_extension "docker"
+
 extension_prepare_config__pingpong() {
 
 	declare -g PINGPONG_DEVICE_ID=${PINGPONG_DEVICE_ID:-}
@@ -10,7 +12,7 @@ extension_prepare_config__pingpong() {
 	declare -g PINGPONG_GRASS_TOKEN=${PINGPONG_GRASS_TOKEN:-}
 	
 	add_packages_to_image curl
-	
+
 }
 
 pre_customize_image__install_pingpong() {
