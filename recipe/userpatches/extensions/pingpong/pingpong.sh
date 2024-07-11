@@ -4,17 +4,34 @@ extension_prepare_config__pingpong() {
 
 	declare -g PINGPONG_DEVICE_ID=${PINGPONG_DEVICE_ID:-}
 	declare -g PINGPONG_INSTALL_PREFIX=${PINGPONG_INSTALL_PREFIX-}
+	declare -g PINGPONG_DEVICE_KEY=${PINGPONG_DEVICE_KEY:-}
+	declare -g PINGPONG_AIOZ_TOKEN=${PINGPONG_AIOZ_TOKEN:-}
+	declare -g PINGPONG_AIOG_TOKEN=${PINGPONG_AIOG_TOKEN:-}
+	declare -g PINGPONG_GRASS_TOKEN=${PINGPONG_GRASS_TOKEN:-}
 	
 	add_packages_to_image curl
+	
 }
 
-pre_customize_image__000_install_pingpong() {
+pre_customize_image__install_pingpong() {
 
+	display_alert "Installing pingpong" "${EXTENSION}" "info"
 	run_host_command_logged cp -v "${EXTENSION_DIR}/src/pingpong-mgr" "${SDCARD}/${PINGPONG_INSTALL_PREFIX}/bin/"
 	chroot_sdcard chmod +x "${PINGPONG_INSTALL_PREFIX}/bin/pingpong-mgr"
 	chroot_sdcard mkdir -p "/usr/lib/systemd/system" || true
 	run_host_command_logged cp -v "${EXTENSION_DIR}/src/pingpong.service" "${SDCARD}/usr/lib/systemd/system/" || {
 		exit_with_error "Failed to copy pingpong.service"
+	}
+	chroot_sdcard mkdir -p "/etc/pingpong" || true
+	chroot_sdcard /usr/bin/env pingpong-mgr configure --config-file /etc/pingpong/config.json --device-key "${PINGPONG_DEVICE_KEY}" --aioz-token "${PINGPONG_AIOZ_TOKEN}" --aiog-token "${PINGPONG_AIOG_TOKEN}" --grass-token "${PINGPONG_GRASS_TOKEN}"
+
+}
+
+post_customize_image__enable_pingpong() {
+
+	display_alert "Enabling pingpong service" "${EXTENSION}" "info"
+	chroot_sdcard systemctl enable pingpong.service || {
+		exit_with_error "Failed to enable pingpong service"
 	}
 
 }

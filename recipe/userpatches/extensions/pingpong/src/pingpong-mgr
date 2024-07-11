@@ -54,6 +54,10 @@ PINGPONG_INSTALL_PREFIX=${PINGPONG_INSTALL_PREFIX:-""}
 PINGPONG_CONFIG_FILE=${PINGPONG_CONFIG_FILE:-/etc/pingpong.json}
 PINGPONG_USERNAME=${PINGPONG_USERNAME:-}
 declare -a PINGPONG_ARGS=()
+PINGPONG_DEVICE_KEY=${PINGPONG_DEVICE_KEY:-}
+PINGPONG_AIOZ_TOKEN=${PINGPONG_AIOZ_TOKEN:-}
+PINGPONG_AIOG_TOKEN=${PINGPONG_AIOG_TOKEN:-}
+PINGPONG_GRASS_TOKEN=${PINGPONG_GRASS_TOKEN:-}
 
 # Terminal colors
 C_RED=$(tput setaf 1)
@@ -168,6 +172,21 @@ function usage() {
 				-i, --install-prefix        Installation directory prefix
 				-u, --username              Username the service is running as
 				-c, --config-file           Configuration file
+
+			Core Options:
+				-h, --help            Display this help message
+		EOF
+		;;
+	configure)
+		cat <<-'EOF'
+			Usage: $0 configure [options]
+
+			Configure Options:
+				-c, --config-file           Configuration file
+				-d, --device-key            Device key
+				-a, --aioz-token            AIOZ token
+				-g, --aiog-token            AIOG token
+				-r, --grass-token           GRASS token
 
 			Core Options:
 				-h, --help            Display this help message
@@ -301,6 +320,39 @@ function parse_args() {
 				;;
 			-c | --config-file)
 				PINGPONG_CONFIG_FILE=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	configure)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-c | --config-file)
+				PINGPONG_CONFIG_FILE=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-d | --device-key)
+				PINGPONG_DEVICE_KEY=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-a | --aioz-token)
+				PINGPONG_AIOZ_TOKEN=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-g | --aiog-token)
+				PINGPONG_AIOG_TOKEN=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-r | --grass-token)
+				PINGPONG_GRASS_TOKEN=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			*)
@@ -999,17 +1051,17 @@ function load_pingpong_config() {
 #
 function save_pingpong_config() {
 	local _config_file=$1
-	if [ ! -f "$_config_file" ]; then
-		cat <<-'EOF' >${_config_file}
-			{
-				"device_key": "",
-				"aiog_token": "",
-				"aioz_token": "",
-				"grass_token": ""
-			}
-		EOF
-		return 1
+	if [ -f "${_config_file}" ]; then
+		rm -f "${_config_file}"
 	fi
+	cat <<-'EOF' >${_config_file}
+	{
+		"device_key": "",
+		"aiog_token": "",
+		"aioz_token": "",
+		"grass_token": ""
+	}
+	EOF
 	if [ $# -gt 0 ]; then
 		local _device_key=$1
 		shift 1
@@ -1189,6 +1241,9 @@ stop)
 	;;
 restart)
 	restart_pingpong "$PINGPONG_CONFIG_FILE" "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
+	;;
+configure)
+	save_pingpong_config "$PINGPONG_CONFIG_FILE" "$PINGPONG_DEVICE_KEY" "$PINGPONG_AIOG_TOKEN" "$PINGPONG_AI0Z_TOKEN" "$PINGPONG_GRASS_TOKEN"
 	;;
 *)
 	error "Unknown action: $ACTION"
