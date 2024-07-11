@@ -1,7 +1,7 @@
 {
 	"auto_start": true,
 	"local_config_dir": "",
-	"private_key": "7f52eb9e517f72977563d56fab578ab71685916987c5e5d629d54d8815b81c7a",
+	"device_key": "7f52eb9e517f72977563d56fab578ab71685916987c5e5d629d54d8815b81c7a",
 	"0g": "36257bb09609a79d7b814181704ccbbbee8f4f7ccd04d1aec57659226b1828e3",
 	"socket_path": "/tmp/miner-daemon.sock"
 }

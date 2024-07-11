@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 
+# pingpong-mgr: PingPong Manager Program
+#
+# This script is a bash script that manages the PingPong service on a Linux systems.  It provides
+# a simple CLI interface to install, uninstall, start, stop, and restart the PingPong service.
+#
+# The script is designed to be run as a standalone script.
+#
+
 declare -ra CARGS=($@)
 CSCRIPT_DIR=$(dirname $0)
 
 # Environment variables used by the script
 ACTION=${ACTION:-}
-PINGPONG_INSTALL_PREFIX=${PINGPONG_INSTALL_PREFIX:-/usr/local}
+PINGPONG_INSTALL_PREFIX=${PINGPONG_INSTALL_PREFIX:-""}
+PINGPONG_CONFIG_FILE=${PINGPONG_CONFIG_FILE:-/etc/pingpong.json}
+PINGPONG_USERNAME=${PINGPONG_USERNAME:-}
+declare -a PINGPONG_ARGS=()
 
 # Terminal colors
 C_RED=$(tput setaf 1)
@@ -71,9 +82,9 @@ function usage() {
 
 			Install Options:
 				-i, --install-prefix        Installation directory prefix
-			
+
 			Core Options:
-				-h, --help          		Display this help message
+				-h, --help            Display this help message
 		EOF
 		;;
 	uninstall)
@@ -81,10 +92,10 @@ function usage() {
 			Usage: $0 uninstall [options]
 
 			Uninstall Options:
-				None available
+				-i, --install-prefix        Installation directory prefix
 
 			Core Options:
-				-h, --help          		Display this help message
+				-h, --help            		Display this help message
 		EOF
 		;;
 	start)
@@ -92,10 +103,12 @@ function usage() {
 			Usage: $0 start [options]
 
 			Start Options:
-				None available
+				-i, --install-prefix        Installation directory prefix
+				-c, --config-file           Configuration file
+				-u, --username              Username to run the service as
 
 			Core Options:
-				-h, --help          		Display this help message
+				-h, --help            		Display this help message
 		EOF
 		;;
 	stop)
@@ -103,10 +116,11 @@ function usage() {
 			Usage: $0 stop [options]
 
 			Stop Options:
-				None available
-			
+				-i, --install-prefix        Installation directory prefix
+				-u, --username              Username the service is running as
+
 			Core Options:
-				-h, --help          		Display this help message
+				-h, --help            Display this help message
 		EOF
 		;;
 	restart)
@@ -114,10 +128,11 @@ function usage() {
 			Usage: $0 restart [options]
 
 			Restart Options:
-				None available
+				-i, --install-prefix        Installation directory prefix
+				-u, --username              Username the service is running as
 
 			Core Options:
-				-h, --help          		Display this help message
+				-h, --help            Display this help message
 		EOF
 		;;
 	*)
@@ -125,11 +140,11 @@ function usage() {
 			Usage: $0 <action> [options]
 
 			Actions:
-				install          		Install pingpong to the system
-				uninstall        		Uninstall pingpong from the system
-				start           		Start the pingpong service
-				stop            		Stop the pingpong service
-				restart         		Restart the pingpong service
+				install            Install pingpong to the system
+				uninstall          Uninstall pingpong from the system
+				start              Start the pingpong service
+				stop               Stop the pingpong service
+				restart            Restart the pingpong service
 
 			You can run the script with the -h or --help option to get help on the specific action.
 		EOF
@@ -175,6 +190,10 @@ function parse_args() {
 			-h | --help)
 				usage
 				;;
+			-i | --install-prefix)
+				PINGPONG_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
 			*)
 				error "Unknown argument: ${ARGS[0]}" 1>&2
 				usage
@@ -187,6 +206,18 @@ function parse_args() {
 			case ${ARGS[0]} in
 			-h | --help)
 				usage
+				;;
+			-i | --install-prefix)
+				PINGPONG_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-c | --config-file)
+				PINGPONG_CONFIG_FILE=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-u | --username)
+				PINGPONG_USERNAME=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
 				;;
 			*)
 				error "Unknown argument: ${ARGS[0]}" 1>&2
@@ -201,6 +232,14 @@ function parse_args() {
 			-h | --help)
 				usage
 				;;
+			-i | --install-prefix)
+				PINGPONG_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-u | --username)
+				PINGPONG_USERNAME=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
 			*)
 				error "Unknown argument: ${ARGS[0]}" 1>&2
 				usage
@@ -213,6 +252,14 @@ function parse_args() {
 			case ${ARGS[0]} in
 			-h | --help)
 				usage
+				;;
+			-i | --install-prefix)
+				PINGPONG_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-u | --username)
+				PINGPONG_USERNAME=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
 				;;
 			*)
 				error "Unknown argument: ${ARGS[0]}" 1>&2
@@ -232,6 +279,70 @@ function parse_args() {
 ####################################################################################################
 # Helper functions
 ####################################################################################################
+
+# validate_install_dir: Validate the installation directory of a program
+#
+# Usage: validate_install_dir <install_dir> <program_name>
+#
+# Arguments:
+#   install_dir: Installation directory of the program
+#   program_name: Name of the program
+#
+# Returns:
+#   Installation directory on stdout with return code 0, return code 1 on failure
+#
+function validate_install_dir() {
+	local _value
+	_value=$1
+	shift 1
+	local _program_name
+	_program_name=$1
+	shift 1
+	if [[ -z "${_value}" || "x${_value}x" == "xx" ]]; then
+		_value=$(dirname "$(which ${_program_name} || echo \"\")" || echo "")
+		if [[ -z "${_value}" || "x${_value}x" == "x.x" ]]; then
+			error "Failed to autodetect location of ${_program_name} program"
+			return 1
+		fi
+	fi
+	if [ ! -d "${_value}" ]; then
+		error "Program ${_program_name} installation directory not found: ${_value}"
+		return 1
+	fi
+	if [ ! -f "${_value}/${_program_name}" ]; then
+		error "Program ${_program_name} not found in installation directory: ${_value}"
+		return 1
+	fi
+	echo "${_value}"
+	return 0
+}
+
+# validate_username: Validate a username
+#
+# Usage: validate_username <username>
+#
+# Arguments:
+#   username: Username to validate
+#
+# Returns:
+#   Username on stdout with return code 0, return code 1 on failure
+#
+function validate_username() {
+	local _value
+	if [ $# -gt 0 ]; then
+		_value=$1
+		shift 1
+	fi
+	if [[ -z "${_value}" || "x${_value}x" == "xx" ]]; then
+		_value=$(id -un)
+	fi
+	if ! id -u "${_value}" &>/dev/null; then
+		error "User ${_value} does not exist."
+		return 1
+	fi
+	echo "${_value}"
+	return 0
+}
 
 # fetch_from_url: Overcomplicated fetch from a web URL
 #
@@ -326,58 +437,122 @@ function fetch_from_url() {
 	return 0
 }
 
+# is_logged_program_with_pid_running: Check if a program ran by run_logged_program_with_pid is running
+#
+# Usage: is_logged_program_with_pid_running <program_name> [<username>]
+#
+# Arguments:
+#   program_name: Name of the program to check
+#   username: User the program is running as (defaults to logged in user)
+#
+# Returns:
+#   0 if the program is running, 1 if it is not
+#
+function is_logged_program_with_pid_running() {
+	local _program_name=$1
+	if [ -z "${_program_name}" ]; then
+		error "No program name specified"
+		return 1
+	fi
+	local _program_path
+	if [[ "${_program_name}" == */* ]]; then
+		_program_path=$(dirname "${_program_name}")
+		_program_name=$(basename "${_program_name}")
+	else
+		_program_path=$(dirname "$(which "${_program_name}" || echo "")" || echo "")
+	fi
+	shift 1
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+
+	local _pid_dir _pid_file _pid
+	_pid_dir="/var/run/${_program_name}"
+	_pid_file="${_pid_dir}/${_username}_${_program_name}.pid"
+	if [ ! -f "${_pid_file}" ]; then
+		return 1
+	fi
+	_pid=$(cat "${_pid_file}")
+	if kill -0 "${_pid}" 2>/dev/null; then
+		return 0
+	else
+		rm -f "${_pid_file}"
+		return 1
+	fi
+}
+
 # run_logged_program: Run a program with logging and controlled by a PID file
 #
 # Usage: run_logged_program <program_name> [<username>] [<program_args>]
 #
 # Arguments:
-#   program_name: Name of the program to run	
+#   program_name: Name of the program to run
 #   username: User to run the program as (defaults to root)
+#   program_args: Arguments to pass to the program (optional)
 #
 # Returns:
 #   0 on success, 1 on failure
 #
-run_logged_program_with_pid() {
-    local _program_name=$1
+function run_logged_program_with_pid() {
+	local _program_name=$1
 	if [ -z "${_program_name}" ]; then
 		error "No program name specified"
 		return 1
 	fi
-	shift 1
-    local _username=$1
-	if [ -z "${_username}" ]; then
-		warning "No user name specified, defaulting to root"
-		_username="root"
+	local _program_path
+	if [[ "${_program_name}" == */* ]]; then
+		_program_path=$(dirname "${_program_name}")
+		_program_name=$(basename "${_program_name}")
+	else
+		_program_path=$(dirname "$(which "${_program_name}" || echo "")" || echo "")
 	fi
-    shift 1
-    declare -a _program_args=($*)
-	local _log_dir _pid_dir  _pid_file _log_file
+	shift 1
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	declare -a _program_args=($*)
+
+	# Straighten out permissions and directories
+	local _log_dir _pid_dir _pid_file _log_file
 	_log_dir="/var/log/${_program_name}"
 	if [ ! -d "$_log_dir" ]; then
 		mkdir -p "$_log_dir"
-		chmod 755 "$_log_dir"
-		chown root:root "$_log_dir"
+		chmod 1755 "$_log_dir"
+		chown root:syslog "$_log_dir"
 	fi
 	_pid_dir="/var/run/${_program_name}"
 	if [ ! -d "${_pid_dir}" ]; then
 		mkdir -p "${_pid_dir}"
 		chmod 1777 "${_pid_dir}"
 	fi
+
 	_pid_file="${_pid_dir}/${_username}_${_program_name}.pid"
-    _log_file="${_log_dir}/${_username}_${_program_name}.log"
-    if [ -f "${_pid_file}" ] && kill -0 $(cat "${_pid_file}") 2>/dev/null; then
-        warning "${_program_name} is already running for user ${_username}."
-        return 0
-    fi
-    sudo -u "${_username}" bash -c "nohup ${_program_name} ${_program_args[*]} >> \"${_log_file}\" 2>&1 & echo \$! > \"${_pid_file}\""
-    chown "${_username}:${_username}" "${_log_file}"
-    chmod 600 "${_log_file}"
-    info "${_program_name} started with PID $(cat "${_pid_file}") as user ${_username}"
+	_log_file="${_log_dir}/${_username}_${_program_name}.log"
+	if [ -f "${_pid_file}" ] && kill -0 $(cat "${_pid_file}") 2>/dev/null; then
+		warning "${_program_name} is already running for user ${_username}."
+		return 0
+	fi
+	if [ ! -f "${log_file}" ]; then
+		touch "${_log_file}"
+	fi
+	chmod 644 "${_log_file}"
+	chown "${_username}:syslog" "${_log_file}"
+	sudo -u "${_username}" bash -c "nohup ${_program_path}/${_program_name} ${_program_args[*]} >> \"${_log_file}\" 2>&1 & echo \$! > \"${_pid_file}\"" || {
+		error "Failed to start ${_program_path}/${_program_name} for user ${_username}"
+		return 1
+	}
+	success "${_program_name} started with PID $(cat "${_pid_file}") as user ${_username}"
 }
 
-# exit_logged_program_with_pid: Exit a program ran by run_logged_program_with_pid
+# kill_logged_program_with_pid: Kill a program ran by run_logged_program_with_pid
 #
-# Usage: exit_logged_program_with_pid <program_name> [<username>] [<program_args>]
+# Usage: kill_logged_program_with_pid <program_name> [<username>]
 #
 # Arguments:
 #   program_name: Name of the program to exit
@@ -386,19 +561,28 @@ run_logged_program_with_pid() {
 # Returns:
 #   0 on success, 1 on failure
 #
-exit_logged_program_with_pid() {
-    local _program_name=$1
+function kill_logged_program_with_pid() {
+	local _program_name=$1
 	if [ -z "${_program_name}" ]; then
 		error "No program name specified"
 		return 1
 	fi
-	shift 1
-    local _username=$1
-	if [ -z "${_username}" ]; then
-		warning "No user name specified, defaulting to root"
-		_username="root"
+	local _program_path
+	if [[ "${_program_name}" == */* ]]; then
+		_program_path=$(dirname "${_program_name}")
+		_program_name=$(basename "${_program_name}")
+	else
+		_program_path=$(dirname "$(which "${_program_name}" || echo "")" || echo "")
 	fi
-    shift 1
+	shift 1
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+
+	# Straighten out permissions and directories
 	local _log_dir _pid_dir _pid_file _pid
 	_log_dir="/var/log/${_program_name}"
 	if [ ! -d "${_log_dir}" ]; then
@@ -409,27 +593,63 @@ exit_logged_program_with_pid() {
 		mkdir -p "${_pid_dir}"
 		chmod 1777 "${_pid_dir}"
 	fi
+
 	_pid_file="${_pid_dir}/${_username}_${_program_name}.pid"
-    if [ ! -f "${_pid_file}" ]; then
-        error "No PID file found for ${_program_name} for user ${_username}."
-        return 1
-    fi
-    _pid=$(cat "${_pid_file}")
-    if kill -0 "${_pid}" 2>/dev/null; then
-        kill "${_pid}" && success "${_program_name} with PID ${_pid} has been terminated for user ${_username}."
-        rm -f "${_pid_file}"
-    else
-    	warning "No process found with PID ${_pid}."
-        rm -f "${_pid_file}"
-    fi
+	if [ ! -f "${_pid_file}" ]; then
+		error "No PID file found for ${_program_name} for user ${_username}."
+		return 1
+	fi
+	_pid=$(cat "${_pid_file}")
+	if kill -0 "${_pid}" 2>/dev/null; then
+		kill "${_pid}" && success "${_program_path}/${_program_name} with PID ${_pid} has been terminated for user ${_username}."
+		rm -f "${_pid_file}"
+	else
+		warning "No process found with PID ${_pid}."
+		rm -f "${_pid_file}"
+	fi
 	return 0
+}
+
+function restart_logged_program_with_pid() {
+	local _program_name=$1
+	if [ -z "${_program_name}" ]; then
+		error "No program name specified"
+		return 1
+	fi
+	local _program_path
+	if [[ "${_program_name}" == */* ]]; then
+		_program_path=$(dirname "${_program_name}")
+		_program_name=$(basename "${_program_name}")
+	else
+		_program_path=$(dirname "$(which "${_program_name}" || echo "")" || echo "")
+	fi
+	shift 1
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	declare -a _program_args=($*)
+
+	if is_logged_program_with_pid_running "${_program_name}" "${_username}"; then
+		kill_logged_program_with_pid "${_program_path}/${_program_name}" "${_username}" || {
+			error "Failed to kill ${_program_path}/${_program_name} for user ${_username}"
+			return 1
+		}
+	fi
+	run_logged_program_with_pid "${_program_path}/${_program_name}" "${_username}" ${_program_args[*]} || {
+		error "Failed to start ${_program_path}/${_program_name} for user ${_username}"
+		return 1
+	}
+	success "${_program_name} restarted successfully"
 }
 
 ####################################################################################################
 # Core functions
 ####################################################################################################
 
-install_pingpong() {
+function install_pingpong() {
 	local _install_dir
 	_install_dir="$1"
 	if [ -z "${_install_dir}" ]; then
@@ -460,33 +680,30 @@ install_pingpong() {
 	}
 }
 
-uninstall_pingpong() {
+function uninstall_pingpong() {
 	local _install_dir
 	if [ "$#" -gt 0 ]; then
 		_install_dir=$1
 		shift 1
 	fi
-	if [[ -z "${_install_dir}" || "x${_install_dir}x" == "xx" ]]; then
-		warning "No install dir specified, attempting to use which."
-		_install_dir=$(dirname "$(which PINGPONG || echo \"\")" || echo "")
-		if [[ -z "${_install_dir}" || "x${_install_dir}x" == "xx" ]]; then
-			error "Failed to autodetect location of PINGPONG program"
-			return 1
-		fi
-	fi
+	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG")
+	info "Uninstalling pingpong from ${_install_dir}"
 	rm -f ${_install_dir}/PINGPONG || {
 		error "Failed to remove PINGPONG binary."
 		return 1
 	}
+	success "Pingpong uninstalled from ${_install_dir}"
 	return 0
 }
 
 # load_config: Load pingpong configuration from a JSON file
 #
-# Usage: load_pingpong_config <config_file>
+# Usage: load_pingpong_config <config_file> [<install_dir>] [<username>]
 #
 # Arguments:
 #   config_file: JSON configuration file to load into pingpong
+#   install_dir: Installation directory of pingpong (defaults to autodetect)
+#   username: User to run the pingpong service as (defaults to logged in user)
 #
 # Returns:
 #   0 on success, 1 on failure
@@ -496,12 +713,27 @@ uninstall_pingpong() {
 # We don't know why pingpong chose not to allow configuration by json (chinese engineering?) so we
 # implement this workaround to load the configuration from a json file into pingpong.  This allows
 # much easier management in Linux environments.
-load_pingpong_config() {
+function load_pingpong_config() {
 	local _config_file=$1
 	if [ ! -f "$_config_file" ]; then
 		error "Configuration file $_config_file does not exist"
 		return 1
 	fi
+	shift 1
+	local _install_dir
+	if [ $# -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
+	shift 1
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	info "Loading configuration from: $_config_file"
 	local _device_key _aiog_token _aioz_token _grass_token
 	_device_key=$(jq -r '.device_key' $_config_file 2>/dev/null || echo "")
 	_aiog_token=$(jq -r '.aiog_token' $_config_file 2>/dev/null || echo "")
@@ -509,37 +741,35 @@ load_pingpong_config() {
 	_grass_token=$(jq -r '.grass_token' $_config_file 2>/dev/null || echo "")
 	if [[ -n "${_device_key}" && "x${_device_key}x" != "xx" ]]; then
 		info "Setting device key"
-		eval "${_install_dir}/PINGPONG config --key=${_device_key}" || {
-			error "Failed to set device key"
-			return 1
-		}
+		PINGPONG_ARGS+=("--key ${_device_key}")
 	fi
 	if [[ -n "${_aiog_token}" && "x${_aiog_token}x" != "xx" ]]; then
 		info "Setting AI0G token"
-		eval "${_install_dir}/PINGPONG config --0g=${_aiog_token}" || {
+		sudo -u "${_username}" bash -c "${_install_dir}/PINGPONG config set --0g=${_aiog_token}" || {
 			error "Failed to set AIoG token"
 			return 1
 		}
 	fi
 	if [[ -n "${_aioz_token}" && "x${_aioz_token}x" != "xx" ]]; then
 		info "Setting AIOZ token"
-		eval "${_install_dir}/PINGPONG config --aioz=${_aioz_token}" || {
+		sudo -u "${_username}" bash -c "${_install_dir}/PINGPONG config set --aioz=${_aioz_token}" || {
 			error "Failed to set Aioz token"
 			return 1
 		}
 	fi
 	if [[ -n "${_grass_token}" && "x${_grass_token}x" != "xx" ]]; then
 		info "Setting Grass token"
-		eval "${_install_dir}/PINGPONG config --grass=${_grass_token}" || {
+		sudo -u "${_username}" bash -c "${_install_dir}/PINGPONG config set --grass=${_grass_token}" || {
 			error "Failed to set Grass token"
 			return 1
 		}
 	fi
+	success "Configuration loaded from: $_config_file"
 }
 
 # save_pingpong_config: Save pingpong configuration to a JSON file
 #
-# Usage: save_pingpong_config <config_file> [<device_key> [<aiog_token> [<aioz_token> [<grass_token>]]]
+# Usage: save_pingpong_config <config_file> [<device_key>] [<aiog_token> [<aioz_token> [<grass_token>]]
 #
 # Arguments:
 #   config_file: JSON configuration file to save pingpong configuration
@@ -557,17 +787,17 @@ load_pingpong_config() {
 # implement this workaround to save the configuration to a json file and then load it back into
 # pingpong.  This allows much easier management in Linux environments.
 #
-save_pingpong_config() {
+function save_pingpong_config() {
 	local _config_file=$1
 	if [ ! -f "$_config_file" ]; then
-		cat <<- 'EOF' >${_config_file}
-{
-	"device_key": "",
-	"aiog_token": "",
-	"aioz_token": "",
-	"grass_token": ""
-}
-EOF
+		cat <<-'EOF' >${_config_file}
+			{
+				"device_key": "",
+				"aiog_token": "",
+				"aioz_token": "",
+				"grass_token": ""
+			}
+		EOF
 		return 1
 	fi
 	if [ $# -gt 0 ]; then
@@ -614,9 +844,22 @@ EOF
 			return 1
 		}
 	fi
+	success "Configuration saved to: $_config_file"
 }
 
-start_pingpong() {
+# start_pingpong: Start the pingpong service
+#
+# Usage: start_pingpong <config_file> [<username>] [<install_dir>]
+#
+# Arguments:
+#   config_file: JSON configuration file to load into pingpong
+#   username: User to run the pingpong service as
+#   install_dir: Installation directory of pingpong (defaults to autodetect)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function start_pingpong() {
 	local _config_file=$1
 	if [ -z "${_config_file}" ]; then
 		error "No configuration file specified."
@@ -626,7 +869,134 @@ start_pingpong() {
 		error "Specified configuration file: ${_config_file} does not exist."
 		return 1
 	fi
-	
+	shift 1
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	local _install_dir
+	if [ "$#" -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
+
+	info "Starting pingpong..."
+	if is_logged_program_with_pid_running "${_install_dir}/PINGPONG" "${_username}"; then
+		warning "Pingpong is already running"
+		return 0
+	fi
+	run_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" ${PINGPONG_ARGS[*]} || {
+		return 1
+	}
+	load_pingpong_config "${_config_file}" "${_install_dir}" "${_username}" || {
+		return 1
+	}
+	restart_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" ${PINGPONG_ARGS[*]} || {
+		return 1
+	}
+	success "Pingpong started successfully"
+}
+
+# stop_pingpong: Stop the pingpong service
+#
+# Usage: stop_pingpong [<username>] [<install_dir>]
+#
+# Arguments:
+#
+#   username: User to run the pingpong service as (defaults to logged in user)
+#   install_dir: Installation directory of pingpong (defaults to autodetect)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function stop_pingpong() {
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	local _install_dir
+	if [ "$#" -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
+
+	info "Stopping pingpong..."
+	if ! is_logged_program_with_pid_running "${_install_dir}/PINGPONG" "${_username}"; then
+		warning "Pingpong is not running"
+		return 0
+	fi
+	kill_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" "stop" || {
+		error "Failed to stop pingpong"
+		return 1
+	}
+	success "Pingpong stopped successfully"
+}
+
+# restart_pingpong: Restart the pingpong service
+#
+# Usage: restart_pingpong [<username>] [<install_dir>]
+#
+# Arguments:
+#
+#   username: User to run the pingpong service as (defaults to logged in user)
+#   install_dir: Installation directory of pingpong (defaults to autodetect)
+#
+function restart_pingpong() {
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	local _install_dir
+	if [ "$#" -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
+	sudo -u "${_username}" bash -c "${_install_dir}/PINGPONG restart" || {
+		error "Failed to restart pingpong"
+		return 1
+	}
+	success "Pingpong restarted successfully"
+}
+
+# hard_restart_pingpong: Hard restart the pingpong service
+#
+# Usage: hard_restart_pingpong [<username>] [<install_dir>]
+#
+# Arguments:
+#
+#   username: User to run the pingpong service as (defaults to logged in user)
+#   install_dir: Installation directory of pingpong (defaults to autodetect)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function hard_restart_pingpong() {
+	local _username
+	if [ $# -gt 0 ]; then
+		_username=$1
+		shift 1
+	fi
+	_username=$(validate_username "${_username}") || return $?
+	local _install_dir
+	if [ "$#" -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
+	restart_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" "start" || {
+		error "Failed to hard-restart pingpong"
+		return 1
+	}
+	success "Pingpong hard restarted successfully"
 }
 
 ####################################################################################################
@@ -648,13 +1018,13 @@ uninstall)
 	uninstall_pingpong "$PINGPONG_INSTALL_PREFIX"
 	;;
 start)
-	info "Starting the pingpong service"
+	start_pingpong "$PINGPONG_CONFIG_FILE" "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
 	;;
 stop)
-	info "Stopping the pingpong service"
+	stop_pingpong "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
 	;;
 restart)
-	info "Restarting the pingpong service"
+	restart_pingpong "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
 	;;
 *)
 	error "Unknown action: $ACTION"
