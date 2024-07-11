@@ -135,15 +135,14 @@ function install_armbian() {
 			if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 				return 0
 			fi
-		else
-			printf "Removing existing Armbian source code..."
-			sudo rm -rf "$ARMBIAN_INSTALL_DIR" || {
-				printf "${C_BOLD}${C_RED}failed${C_RESET}\n"
-				rm -rf "$temp_file" "$temp_folder"
-				return 1
-			}
-			printf "${C_BOLD}${C_GREEN}OK${C_RESET}\n"
 		fi
+		printf "Removing existing Armbian source code..."
+		sudo rm -rf "$ARMBIAN_INSTALL_DIR" || {
+			printf "${C_BOLD}${C_RED}failed${C_RESET}\n"
+			rm -rf "$temp_file" "$temp_folder"
+			return 1
+		}
+		printf "${C_BOLD}${C_GREEN}OK${C_RESET}\n"
 	fi
 	printf "Downloading Armbian source code..."
 	wget -qO "$temp_file" "https://github.com/armbian/build/archive/refs/heads/main.zip" || {
