@@ -1,0 +1,6 @@
+{
+	"device_key": "insert_pingpong_device_key_here",
+	"aiog_token": "insert_aiog_wallet_private_key_here",
+	"aioz_token": "insert_aioz_private_key_here",
+	"grass_token": "insert_grass_user_id_here"
+}
