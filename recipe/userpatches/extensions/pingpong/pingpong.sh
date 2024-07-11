@@ -4,7 +4,6 @@ enable_extension "docker"
 
 extension_prepare_config__pingpong() {
 
-	declare -g PINGPONG_DEVICE_ID=${PINGPONG_DEVICE_ID:-}
 	declare -g PINGPONG_INSTALL_PREFIX=${PINGPONG_INSTALL_PREFIX-}
 	declare -g PINGPONG_DEVICE_KEY=${PINGPONG_DEVICE_KEY:-}
 	declare -g PINGPONG_AIOZ_TOKEN=${PINGPONG_AIOZ_TOKEN:-}
@@ -25,7 +24,12 @@ pre_customize_image__install_pingpong() {
 		exit_with_error "Failed to copy pingpong.service"
 	}
 	chroot_sdcard mkdir -p "/etc/pingpong" || true
-	chroot_sdcard pingpong-mgr configure --config-file "/etc/pingpong/config.json" --device-key "${PINGPONG_DEVICE_KEY}" --aioz-token "${PINGPONG_AIOZ_TOKEN}" --aiog-token "${PINGPONG_AIOG_TOKEN}" --grass-token "${PINGPONG_GRASS_TOKEN}" || {
+	declare -a PINGPONG_CONFIG_ARGS=()
+	[[ -n "${PINGPONG_DEVICE_KEY}" && "x${PINGPONG_DEVICE_KEY}x" != "xx" ]] && PINGPONG_CONFIG_ARGS+=("--device-key" "${PINGPONG_DEVICE_KEY}")
+	[[ -n "${PINGPONG_AIOZ_TOKEN}" && "x${PINGPONG_AIOZ_TOKEN}x" != "xx" ]] && PINGPONG_CONFIG_ARGS+=("--aioz-token" "${PINGPONG_AIOZ_TOKEN}")
+	[[ -n "${PINGPONG_AIOG_TOKEN}" && "x${PINGPONG_AIOG_TOKEN}x" != "xx" ]] && PINGPONG_CONFIG_ARGS+=("--aiog-token" "${PINGPONG_AIOG_TOKEN}")
+	[[ -n "${PINGPONG_GRASS_TOKEN}" && "x${PINGPONG_GRASS_TOKEN}x" != "xx" ]] && PINGPONG_CONFIG_ARGS+=("--grass-token" "${PINGPONG_GRASS_TOKEN}")
+	chroot_sdcard pingpong-mgr configure --config-file "/etc/pingpong/config.json" ${PINGPONG_CONFIG_ARGS[@]} || {
 		exit_with_error "Failed to configure pingpong"
 	}
 
