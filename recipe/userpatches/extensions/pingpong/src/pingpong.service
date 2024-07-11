@@ -4,12 +4,13 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/env pingpong-mgr start
-ExecStop=/usr/bin/env pingpong-mgr stop
-ExecRestart=/usr/bin/env pingpong-mgr restart
-User=%i
+Type=simple
+ExecStart=/usr/bin/env pingpong-mgr start --config-file /etc/pingpong/config.json --username %i
+ExecStop=/usr/bin/env pingpong-mgr stop --username %i
+ExecReload=/usr/bin/env pingpong-mgr restart --config-file /etc/pingpong/config.json --username %i
+User=root
 Restart=always
 RestartSec=3s
 
 [Install]
-WantedBy=multiuser.target
+WantedBy=multi-user.target

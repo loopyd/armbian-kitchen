@@ -167,6 +167,7 @@ function usage() {
 			Restart Options:
 				-i, --install-prefix        Installation directory prefix
 				-u, --username              Username the service is running as
+				-c, --config-file           Configuration file
 
 			Core Options:
 				-h, --help            Display this help message
@@ -296,6 +297,10 @@ function parse_args() {
 				;;
 			-u | --username)
 				PINGPONG_USERNAME=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			-c | --config-file)
+				PINGPONG_CONFIG_FILE=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
 			*)
@@ -1117,10 +1122,11 @@ function stop_pingpong() {
 
 # restart_pingpong: Restart the pingpong service
 #
-# Usage: restart_pingpong [<username>] [<install_dir>]
+# Usage: restart_pingpong <config_file> [<username>] [<install_dir>]
 #
 # Arguments:
 #
+#   config_file: JSON configuration file to load into pingpong
 #   username: User to run the pingpong service as (defaults to logged in user)
 #   install_dir: Installation directory of pingpong (defaults to autodetect)
 #
@@ -1128,6 +1134,9 @@ function stop_pingpong() {
 #   0 on success, 1 on failure
 #
 function restart_pingpong() {
+	local _config_file=$1
+	_config_file=$(validate_file "${_config_file}") || return $?
+	shift 1
 	local _username
 	if [ $# -gt 0 ]; then
 		_username=$1
@@ -1140,43 +1149,18 @@ function restart_pingpong() {
 		shift 1
 	fi
 	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
-	sudo -u "${_username}" bash -c "${_install_dir}/PINGPONG restart" || {
-		error "Failed to restart pingpong"
+	load_pingpong_config "${_config_file}" "${_install_dir}" "${_username}" 1 || return $?
+	if is_logged_program_with_pid_running "${_install_dir}/PINGPONG" "${_username}"; then
+		kill_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" 15 3 || {
+			error "Failed to stop pingpong"
+			return 1
+		}
+	fi
+	run_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" 15 3 ${PINGPONG_ARGS[*]} || {
+		error "Failed to start pingpong"
 		return 1
 	}
 	success "Pingpong in ${_install_dir} for user ${_username} restarted successfully"
-}
-
-# hard_restart_pingpong: Hard restart the pingpong service
-#
-# Usage: hard_restart_pingpong [<username>] [<install_dir>]
-#
-# Arguments:
-#
-#   username: User to run the pingpong service as (defaults to logged in user)
-#   install_dir: Installation directory of pingpong (defaults to autodetect)
-#
-# Returns:
-#   0 on success, 1 on failure
-#
-function hard_restart_pingpong() {
-	local _username
-	if [ $# -gt 0 ]; then
-		_username=$1
-		shift 1
-	fi
-	_username=$(validate_username "${_username}") || return $?
-	local _install_dir
-	if [ "$#" -gt 0 ]; then
-		_install_dir=$1
-		shift 1
-	fi
-	_install_dir=$(validate_install_dir "${_install_dir}" "PINGPONG") || return $?
-	restart_logged_program_with_pid "${_install_dir}/PINGPONG" "${_username}" 15 3 start || {
-		error "Failed to hard-restart pingpong"
-		return 1
-	}
-	success "Pingpong in ${_install_dir} for user ${_username} hard-restarted successfully"
 }
 
 ####################################################################################################
@@ -1204,7 +1188,7 @@ stop)
 	stop_pingpong "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
 	;;
 restart)
-	restart_pingpong "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
+	restart_pingpong "$PINGPONG_CONFIG_FILE" "$PINGPONG_USERNAME" "$PINGPONG_INSTALL_PREFIX"
 	;;
 *)
 	error "Unknown action: $ACTION"
