@@ -681,7 +681,7 @@ function build_xorgxrdp() {
 		popd
 		return 1
 	}
-	./configure --enable-lrandr || {
+	./configure || {
 		error "Failed to configure xorgxrdp"
 		popd
 		return 1

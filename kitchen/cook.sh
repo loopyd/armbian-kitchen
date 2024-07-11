@@ -131,6 +131,10 @@ function compile_armbian() {
 			error "Failed to install Armbian"
 			return 1
 		}
+		eval "docker image prune -af; docker system prune -af; docker volume prune -af; docker network prune -f; docker container prune -f" || {
+			error "Failed to cleanup docker."
+			return 1
+		}
 	fi
 	pushd "$ARMBIAN_INSTALL_DIR" >/dev/null 2>&1 || {
 		error "Armbian directory not found: $ARMBIAN_INSTALL_DIR"
@@ -148,11 +152,11 @@ function compile_armbian() {
 		}
 		if [[ -n $ARMBIAN_BUILD_TARGET ]]; then
 			eval "./compile.sh BUILD_ONLY=${ARMBIAN_BUILD_TARGET} $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
-				error "Failed to compile Armbian"
+				error "Failed to compile Armbian."
 				return 1
 			}
 		else
-			eval "./compile.sh CLEAN_LEVEL=make-atf,make-kernel,make-uboot,debs,alldebs,images,cache,oldcache $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
+			eval "./compile.sh $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
 				error "Failed to compile Armbian"
 				return 1
 			}

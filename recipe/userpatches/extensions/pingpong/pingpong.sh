@@ -25,7 +25,9 @@ pre_customize_image__install_pingpong() {
 		exit_with_error "Failed to copy pingpong.service"
 	}
 	chroot_sdcard mkdir -p "/etc/pingpong" || true
-	chroot_sdcard /usr/bin/env pingpong-mgr configure --config-file /etc/pingpong/config.json --device-key "${PINGPONG_DEVICE_KEY}" --aioz-token "${PINGPONG_AIOZ_TOKEN}" --aiog-token "${PINGPONG_AIOG_TOKEN}" --grass-token "${PINGPONG_GRASS_TOKEN}"
+	chroot_sdcard pingpong-mgr configure --config-file "/etc/pingpong/config.json" --device-key "${PINGPONG_DEVICE_KEY}" --aioz-token "${PINGPONG_AIOZ_TOKEN}" --aiog-token "${PINGPONG_AIOG_TOKEN}" --grass-token "${PINGPONG_GRASS_TOKEN}" || {
+		exit_with_error "Failed to configure pingpong"
+	}
 
 }
 
