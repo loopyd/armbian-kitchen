@@ -749,6 +749,11 @@ function build_pulseaudio() {
 		popd
 		return 1
 	}
+	ninja -C build install || {
+		error "Failed to install pulseaudio"
+		popd
+		return 1
+	}
 	popd
 	success "Pulseaudio built successfully"
 	return 0

@@ -15,7 +15,7 @@ function usage() {
 		echo "Options:"
 		echo "  -h, --help              	Display this help message"
 		echo "  -d, --install-dir DIR   	Armbian source code directory (default: /opt/armbian)"
-		echo "  -c, --config-file FILE  	Armbian configuration file"
+		echo "  -c, --config-name FILE  	Armbian configuration name (in userpatches directory)"
 		echo "  -u, --userpatches-dir DIR  	Armbian userpatches directory"
 		echo "  -s, --target TARGET      	Armbian build target (optional)"
 		ECHO "  -C, --clean             	Clean Armbian build"
@@ -59,7 +59,7 @@ function parse_args() {
 				ARMBIAN_INSTALL_DIR=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
-			-c|--config-file)
+			-c|--config-name)
 				ARMBIAN_CONFIG_FILE=${ARGS[1]}
 				ARGS=(${ARGS[@]:2})
 				;;
@@ -107,22 +107,22 @@ function parse_args() {
 }
 
 # Output Armbian configuration parameters
-function armbian_config_str() {
-	local config_file=$1
-	if [[ -z $config_file ]]; then
-		error "Armbian configuration file not provided"
-		return 1
-	fi
-	if [[ ! -f $config_file ]]; then
-		error "Armbian configuration file not found: $config_file"
-		return 1
-	fi
-	local config_str=""
-	while IFS= read -r line; do
-		config_str+=" ${line}"
-	done < "${config_file}"
-	echo $config_str
-}
+# function armbian_config_str() {
+# 	local config_file=$1
+# 	if [[ -z $config_file ]]; then
+# 		error "Armbian configuration file not provided"
+# 		return 1
+# 	fi
+# 	if [[ ! -f $config_file ]]; then
+# 		error "Armbian configuration file not found: $config_file"
+# 		return 1
+# 	fi
+# 	local config_str=""
+# 	while IFS= read -r line; do
+# 		config_str+=" ${line}"
+# 	done < "${config_file}"
+# 	echo $config_str
+# }
 
 # Compile Armbian
 function compile_armbian() {
@@ -140,8 +140,10 @@ function compile_armbian() {
 		error "Armbian directory not found: $ARMBIAN_INSTALL_DIR"
 		return 1
 	}
-	if [ ! -f $ARMBIAN_CONFIG_FILE ]; then
-		error "Armbian configuration file not found: $ARMBIAN_CONFIG_FILE"
+	local _config_file_path
+	_config_file_path=$(realpath "${CSCRIPT_DIR}/../recipe/userpatches/config-${ARMBIAN_CONFIG_FILE}.conf")
+	if [ ! -f "${_config_file_path}" ]; then
+		error "Armbian configuration file not found: ${_config_file_path}"
 		return 1
 	fi
 	if [[ -f "compile.sh" ]]; then
@@ -151,12 +153,12 @@ function compile_armbian() {
 			return 1
 		}
 		if [[ -n $ARMBIAN_BUILD_TARGET ]]; then
-			eval "./compile.sh BUILD_ONLY=${ARMBIAN_BUILD_TARGET} $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
+			eval "./compile.sh ${ARMBIAN_BUILD_TARGET}" || {
 				error "Failed to compile Armbian."
 				return 1
 			}
 		else
-			eval "./compile.sh $(armbian_config_str ${ARMBIAN_CONFIG_FILE})" || {
+			eval "./compile.sh ${ARMBIAN_CONFIG_FILE}" || {
 				error "Failed to compile Armbian"
 				return 1
 			}
@@ -216,7 +218,6 @@ function compile_rkdeveloptool() {
 
 # Main
 parse_args ${CARGS[*]}
-ARMBIAN_CONFIG_FILE=$(cd "$(dirname "${ARMBIAN_CONFIG_FILE}")" && pwd)/$(basename "${ARMBIAN_CONFIG_FILE}")
 ARMBIAN_INSTALL_DIR=$(cd "$ARMBIAN_INSTALL_DIR" && pwd)
 ARMBIAN_INSTALL_DIR=${ARMBIAN_INSTALL_DIR%/}
 ARMBIAN_USERPATCHES_DIR=$(cd "$ARMBIAN_USERPATCHES_DIR" && pwd)

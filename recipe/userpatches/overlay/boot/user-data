@@ -14,7 +14,7 @@ users:
   - name: grassi
     gecos: Grass Node Operator
     sudo: ALL=(ALL) NOPASSWD:ALL
-    groups: users adm cdrom audio dip plugdev kvm syslog lpadmin sambashare docker admin
+    groups: users, adm, disk, audio, dip, plugdev, kvm, syslog, docker, video, sudo
     selinux_user: staff_u
     lock_passwd: false
     passwd: "$6$rounds=4096$HS4aDcugTKQapUxi$jbz0kus1P/rbiW/vqe9EDKiMoParnY/x3h03AUZnynYcIchuLu8kecDGkxndrH0NAxqmeWhK3Hj7IxUvoZUc31"
