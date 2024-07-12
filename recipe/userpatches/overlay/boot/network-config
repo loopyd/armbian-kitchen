@@ -7,7 +7,10 @@ ethernets:
       name: "en*,eth*"
 wifis:
   wlan0:
+    match:
+      macaddress: "5c:8a:ae:85:b9:bb"
     dhcp4: true
+    dhcp6: true
     optional: true
     access-points:
       The Gates:

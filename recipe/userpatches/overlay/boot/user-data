@@ -7,13 +7,17 @@ locale: en_US.UTF-8
 timezone: US/Mountain
 
 users:
+  - name: root
+    lock_passwd: false
+    passwd: "6$rounds=4096$2eCMs8GZm/ADVLbH$JtjzhWROFc9FKypanTaBxjG8QV6y9.47DeuZSRbj2p03g1uOHj73gjzcYNXQu1D3j5TOw9ITRhTvjI8gz3kuU/"
+    shell: /bin/bash
   - name: grassi
     gecos: Grass Node Operator
     sudo: ALL=(ALL) NOPASSWD:ALL
-    groups: users, admin
+    groups: users adm cdrom audio dip plugdev kvm syslog lpadmin sambashare docker admin
     selinux_user: staff_u
     lock_passwd: false
-    passwd: $6$rounds=4096$HhCfD0ogM.96.emz$FgQhSITJ1BhfkEv7f1TgqoyvPlTvuY7HGZsBAJmgS3fCDFT69wX/P1aWg29PARfXJEaPAkDl1XnxI4OXpQUmW.
+    passwd: "$6$rounds=4096$HS4aDcugTKQapUxi$jbz0kus1P/rbiW/vqe9EDKiMoParnY/x3h03AUZnynYcIchuLu8kecDGkxndrH0NAxqmeWhK3Hj7IxUvoZUc31"
     shell: /bin/bash
 
 package_update: true

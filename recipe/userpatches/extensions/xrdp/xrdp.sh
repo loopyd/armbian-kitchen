@@ -19,12 +19,13 @@ extension_prepare_config__prepare_xrdp_config() {
 	declare -g XRDP_VERSION="${XRDP_VERSION:-0.10.0}"
 	declare -g XRDP_PULSEAUDIO_MODULE_VERSION="${XRDP_PULSEAUDIO_MODULE_VERSION:-0.7}"
 	declare -g XRDP_INSTALL_PREFIX="${XRDP_INSTALL_PREFIX:-/usr/local}"
-	declare -ga XRDP_BUILD_DEPS=()
-	XRDP_BUILD_DEPS+=(build-essential make autoconf libtool intltool bison flex autopoint pkg-config nasm ninja-build meson yasm cmake check xsltproc dbus-x11 doxygen gcovr valgrind libglib2.0-dev libcmocka-dev libcmocka0 libxfixes-dev libxrandr-dev libgbm-dev libepoxy-dev libexecs-dev libdbus-1-dev libsystemd-dev libx11-xcb-dev libseat1 xserver-xorg-dev libssl-dev libpam0g-dev libx11-dev libxfixes-dev libxrandr-dev xutils-dev libxml2-dev python3-libxml2 libfuse-dev libcap-dev libgtk-3-dev libltdl-dev libtdb-dev libimlib2-dev libfreetype-dev liblirc-dev liblirc-client0 liblirc0 libudev-dev libudev1 libjson-c-dev liborc-0.4-dev libibus-1.0-dev libxkbfile-dev)
-	XRDP_BUILD_DEPS+=(libjpeg-dev libopus-dev libmp3lame-dev libegl1-mesa-dev libsamplerate0-dev libsamplerate0 libresample1-dev libresample1 libsndfile1-dev libspeex-dev libpulse-dev libpulse0 libfdk-aac-dev libturbojpeg0-dev libjpeg-turbo8-dev libfftw3-dev libasyncns-dev libasound2-dev libspeexdsp-dev libspeexdsp1 libsoxr-dev libsoxr0 libwebrtc-audio-processing-dev libwebrtc-audio-processing1 libx264-dev libavahi-client-dev libavahi-client3 libsbc-dev libsbc1 bluez libbluetooth-dev libbluetooth3 libjack-jackd2-dev)
-	XRDP_BUILD_DEPS+=(libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-alsa gstreamer1.0-tools gstreamer1.0-plugins-rtp gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-bad-apps ubuntu-restricted-extras)
 
-	add_packages_to_image rsync xutils valgrind 
+	declare -gra XRDP_BUILD_DEPS=(rsync libglib2.0-dev libcmocka-dev libxfixes-dev libxrandr-dev libgbm-dev libepoxy-dev libexecs-dev libdbus-1-dev libsystemd-dev libx11-xcb-dev xserver-xorg-dev libssl-dev libpam0g-dev libx11-dev xutils-dev libxml2-dev libfuse-dev libcap-dev libgtk-3-dev libltdl-dev libtdb-dev libimlib2-dev libfreetype-dev liblirc-dev libudev-dev libjson-c-dev liborc-0.4-dev libibus-1.0-dev libxkbfile-dev libjpeg-dev libopus-dev libmp3lame-dev libegl1-mesa-dev libsamplerate0-dev libresample1-dev libsndfile1-dev libspeex-dev libpulse-dev libfdk-aac-dev libturbojpeg0-dev libjpeg-turbo8-dev libfftw3-dev libasyncns-dev libasound2-dev libspeexdsp-dev libsoxr-dev libwebrtc-audio-processing-dev libx264-dev libavahi-client-dev libsbc-dev libbluetooth-dev libjack-jackd2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev)
+
+	declare -gra XRDP_RUNTIME_DEPS=(xutils valgrind build-essential make autoconf libtool intltool bison flex autopoint pkg-config nasm ninja-build meson yasm cmake check xsltproc dbus-x11 doxygen gcovr valgrind libcmocka0 libseat1 python3-libxml2 liblirc-client0 liblirc0 libudev1 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-alsa gstreamer1.0-tools gstreamer1.0-plugins-rtp gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-bad-apps ubuntu-restricted-extras libavahi-client3 libbluetooth3 libsbc1 bluez libwebrtc-audio-processing1 libsoxr0 libspeexdsp1 libpulse0 libsamplerate0 libresample1)
+
+	# All the runtime dependencies for XRDP get added to the image
+	add_packages_to_image ${XRDP_RUNTIME_DEPS[*]}
 }
 
 pre_customize_image__000_xrdp_init() {
