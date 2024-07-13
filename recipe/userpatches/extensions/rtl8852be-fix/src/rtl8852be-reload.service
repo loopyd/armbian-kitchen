@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/lib/scripts/rtl8852be-reload.sh
+ExecStart=/usr/bin/env /usr/lib/scripts/rtw89-mgr reload --install-dir /usr/local/src --module-name rtw_8852be
 StandardOutput=journal
 
 [Install]

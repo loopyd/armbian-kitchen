@@ -1,0 +1,798 @@
+#!/usr/bin/env bash
+
+declare -ra CARGS=($@)
+CSCRIPT_DIR=$(dirname $0)
+
+# Environment variables used by the script
+ACTION=${ACTION:-}
+RTW89_INSTALL_PREFIX=${RTW89_INSTALL_PREFIX:-""}
+RTW89_RELOAD_MODULE=${RTW89_RELOAD_MODULE:-""}
+RTW89_VERSION=${RTW89_VERSION:-"latest"}
+
+# Terminal colors
+C_RED=$(tput setaf 1)
+C_GREEN=$(tput setaf 2)
+C_YELLOW=$(tput setaf 3)
+C_BLUE=$(tput setaf 4)
+C_MAGENTA=$(tput setaf 5)
+C_CYAN=$(tput setaf 6)
+C_WHITE=$(tput setaf 7)
+C_RESET=$(tput sgr0)
+C_BOLD=$(tput bold)
+C_UNDERLINE=$(tput smul)
+
+####################################################################################################
+# Logging functions
+####################################################################################################
+
+# Display program error messages
+function error() {
+	echo -e "${C_RED}${C_BOLD}Error:${C_RESET} $1" 1>&2
+}
+
+# Display program warning messages
+function warning() {
+	echo -e "${C_YELLOW}${C_BOLD}Warning:${C_RESET} $1" 1>&2
+}
+
+# Display program info messages
+function info() {
+	echo -e "${C_CYAN}${C_BOLD}Info:${C_RESET} $1"
+}
+
+# Display program success messages
+function success() {
+	echo -e "${C_GREEN}${C_BOLD}Success:${C_RESET} $1"
+}
+
+# Error trap function
+function error_trap() {
+	local RET=$?
+	if [ $RET -ne 0 ]; then
+		error "Script failed with exit code: $RET"
+	fi
+	exit $RET
+}
+trap error_trap EXIT ERR SIGINT SIGTERM
+
+####################################################################################################
+# CLI functions
+####################################################################################################
+
+# usage: Display program usage information
+function usage() {
+	cat <<-'EOF'
+		rtw89 - Realtek 802.11ax WiFi driver for Linux Manager
+		by loopyd <loopyd@github.com> 2024 | GPLv3.0 permissive license
+	EOF
+	case "$ACTION" in
+	install)
+		cat <<-'EOF'
+			Usage: $0 install [options]
+
+			Install Options:
+				-i, --install-prefix        Installation directory prefix
+				-v, --version               Version of rtw89 to install (default: latest)
+
+			Core Options:
+				-h, --help            		Display this help message
+		EOF
+		;;
+	uninstall)
+		cat <<-'EOF'
+			Usage: $0 uninstall [options]
+
+			Uninstall Options:
+				-i, --install-prefix        Installation directory prefix
+
+			Core Options:
+				-h, --help              	Display this help message
+		EOF
+		;;
+	reload)
+		cat <<-'EOF'
+			Usage: $0 reload [options]
+
+			Reload Options:
+				-i, --install-prefix        Installation directory prefix
+				-m, --module-name           Module name of the driver
+
+			Core Options:
+				-h, --help              	Display this help message
+		EOF
+		;;
+	*)
+		cat <<-'EOF'
+			Usage: $0 <action> [options]
+
+			Actions:
+				install            	Install rtw89 to the system
+				uninstall        	Uninstall rtw89 from the system
+				reload            	Reload the rtw89 driver
+
+			You can run the script with the -h or --help option to get help on the specific action.
+		EOF
+		;;
+	esac
+	exit 1
+}
+
+# parse_args:  Parse command line arguments for the script
+function parse_args() {
+	local ARGS
+	ARGS=($@)
+	if [[ ${#ARGS[@]} -eq 0 ]]; then
+		return 0
+	fi
+	ACTION=${ARGS[0]}
+	if [[ -z $ACTION ]]; then
+		error "No action specified"
+		usage
+	fi
+	ARGS=(${ARGS[@]:1})
+	case "$ACTION" in
+	install)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-i | --install-prefix)
+				RTW89_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	uninstall)
+		while [ ${#ARGS[@]} -gt 0 ]; do
+			case ${ARGS[0]} in
+			-h | --help)
+				usage
+				;;
+			-i | --install-prefix)
+				RTW89_INSTALL_PREFIX=${ARGS[1]}
+				ARGS=(${ARGS[@]:2})
+				;;
+			*)
+				error "Unknown argument: ${ARGS[0]}" 1>&2
+				usage
+				;;
+			esac
+		done
+		;;
+	*)
+		error "Unknown action: $ACTION"
+		usage
+		;;
+	esac
+	return 0
+}
+
+####################################################################################################
+# Helper functions
+####################################################################################################
+
+# validate_boolean: Validate a boolean value
+#
+# Usage: validate_boolean <value>
+#
+# Arguments:
+#   value: Value to validate
+#
+# Returns:
+#   true or false on stdout with return code 0, return code 1 on failure
+function validate_boolean() {
+	local _value
+	if [ $# -gt 0 ]; then
+		_value=$1
+		shift 1
+	fi
+	case ${_value} in
+	true | false)
+		[[ "${_value}" == "true" ]] && echo true || echo false
+		;;
+	0 | 1)
+		[[ "${_value}" == "1" ]] && echo true || echo false
+		;;
+	"yes" | "no")
+		[[ "${_value}" == "yes" ]] && echo true || echo false
+		;;
+	"on" | "off")
+		[[ "${_value}" == "on" ]] && echo true || echo false
+		;;
+	*)
+		error "Invalid boolean value: ${_value}"
+		return 1
+		;;
+	esac
+	return 0
+}
+
+# validate_file: Validate a file
+#
+# Usage: validate_file <file>
+#
+# Arguments:
+#   file: File to validate
+#
+# Returns:
+#   File on stdout with return code 0, return code 1 on failure
+#
+function validate_file() {
+	local _value
+	if [ $# -gt 0 ]; then
+		_value=$1
+		shift 1
+	else
+		error "No file specified."
+		return 1
+	fi
+	if [ ! -f "${_value}" ]; then
+		error "File ${_value} does not exist."
+		return 1
+	fi
+	echo "${_value}"
+	return 0
+}
+
+# reload_driver: Reloada DKMS driver
+#
+# Usage: reload_driver <module_name>
+#
+# Arguments:
+#   module_name: Module name of the driver
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function load_driver() {
+	local _module_name
+	_module_name=$1
+	if [ -z "${_module_name}" ]; then
+		error "No Module name specified."
+		return 1
+	fi
+	if eval "modprobe -n ${_module_name} 1>/dev/null 2>&1"; then
+    	eval "modprobe -r ${_module_name} && modprobe -i ${_module_name}" || {
+			error "Failed to reload module ${_module_name}"
+			return 1
+		}
+	else
+		error "Module ${_module_name} is not reloadable"
+		return 1
+	fi
+	success "Module ${_module_name} reloaded"
+	return 0
+}
+
+# unload_driver: Unload the DKMS driver
+#
+# Usage: unload_driver <module_name>
+#
+# Arguments:
+#   module_name: DKMS name of the driver
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function unload_driver() {
+	local _module_name
+	_module_name=$1
+	if [ -z "${_module_name}" ]; then
+		error "No module reload command specified."
+		return 1
+	fi
+	if eval "modprobe -nr ${_module_name} 1>/dev/null 2>&1"; then
+		eval "modprobe -r ${_module_name}" || {
+			error "Failed to unload module ${_module_name}"
+			return 1
+		}
+	else
+		error "Module ${_module_name} is not installed"
+		return 1
+	fi
+	success "rtw89 driver: ${_module_name} unloaded"
+}
+
+####################################################################################################
+# Git helper functions
+####################################################################################################
+
+# git_parse_ref: Parse a a git reference parameter
+#
+# Usage: git_parse_ref <ref>
+#
+# Arguments:
+#   ref: Git reference to parse
+#
+# Returns:
+#   None
+#
+function git_parse_ref() {
+	declare ref="$1"
+	[[ -z $ref || ($ref != tag:* && $ref != branch:* && $ref != head && $ref != commit:*) ]] && error "Error in configuration; git_ref '${ref}' is not valid" && exit 1
+	ref_type=${ref%%:*}
+	ref_name=${ref##*:}
+	if [[ $ref_type == head ]]; then
+		ref_name=HEAD
+	fi
+}
+
+# improved_git: Improved git function with retry mechanism.
+#
+# Usage: improved_git <git-command>
+#
+# Arguments:
+#   git-command: Git command to run
+#
+# Returns:
+#   None
+#
+function improved_git() {
+	local real_git
+	real_git="$(command -v git)"
+	local retries=3
+	local delay=10
+	local count=0
+	while [ $count -lt $retries ]; do
+		$real_git --no-pager "$@" && return 0
+		count=$((count + 1))
+		warning "improved_git try $count failed, retrying in ${delay} seconds"
+		sleep $delay
+	done
+	error "improved_git, too many retries"
+	return 17
+}
+
+# regular_git: Regular git function with no retry mechanism.
+#
+# Usage: regular_git <git-command>
+#
+# Arguments:
+#   git-command: Git command to run
+#
+# Returns:
+#   None
+#
+function regular_git() {
+	git --no-pager "$@"
+}
+
+# improved_git_fetch: Improved git fetch function with verbose output and no submodules.
+#
+# Usage: improved_git_fetch <url> <ref>
+#
+# Arguments:
+#   url: URL to fetch from
+#   ref: Git reference to fetch
+#
+# Returns:
+#   None
+#
+function improved_git_fetch() {
+	declare -a verbose_params=() && if [[ -t 1 && -n $PS1 ]]; then verbose_params+=("--verbose" "--progress"); fi
+	improved_git fetch "${verbose_params[@]}" --recurse-submodules=no "$@"
+}
+
+# git_ensure_safe_directory: Git ensure safe directory function.
+#
+# Usage: git_ensure_safe_directory <directory>
+#
+# Arguments:
+#   directory: Directory to ensure is safe
+#
+# Returns:
+#   None
+#
+function git_ensure_safe_directory() {
+	if [[ -n "$(command -v git)" ]]; then
+		local git_dir="$1"
+		if [[ -e "$1/.git" ]]; then
+			info "git: Marking all directories as safe, which should include $git_dir"
+			regular_git config --global --get safe.directory "$1" >/dev/null || regular_git config --global --add safe.directory "$1"
+		fi
+	else
+		warning "git not installed. Skipping safe directory check."
+	fi
+}
+
+# fetch_from_repo: Overcomplicated fetch from git repository
+#
+# Usage: fetch_from_repo <url> <dir> <ref> [<ref_subdir>]
+#
+# Arguments:
+#   url: URL to fetch from
+#   dir: Target directory to fetch to
+#   ref: Git reference to fetch
+#   ref_subdir: Fetch to a subdirectory named after the reference? (yes/no)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function fetch_from_repo() {
+	info "fetch_from_repo $*"
+	local url=$1
+	local dir=$2
+	local ref=$3
+	local ref_subdir=$4
+	local git_work_dir
+	declare ref_type ref_name
+	git_parse_ref "$ref"
+	info "Getting sources from Git $dir $ref_name"
+	local workdir=$dir
+	if [[ "${ref_subdir}" == "yes" ]]; then
+		workdir=$dir/$ref_name
+	fi
+	git_work_dir="${workdir}"
+	info "Git working dir ${git_work_dir}"
+	mkdir -p "${git_work_dir}" || {
+		error "No path or no write permission ${git_work_dir}"
+		return 1
+	}
+	pushd "${git_work_dir}" || {
+		error "Failed to change to directory ${git_work_dir}"
+		return 1
+	}
+	git_ensure_safe_directory "${git_work_dir}"
+	if [[ ! -d ".git" || "$(git rev-parse --git-dir)" != ".git" ]]; then
+		info "Initializing empty git local copy git init: $dir $ref_name"
+		regular_git init -q .
+	fi
+	local changed=false
+	local local_hash
+	local_hash=$(git rev-parse @ 2>/dev/null || true)
+	local remote_hash
+	case $ref_type in
+	branch)
+		remote_hash=$(git ls-remote -h "${url}" "$ref_name" | head -1 | cut -f1)
+		[[ -z $local_hash || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		;;
+	tag)
+		remote_hash=$(git ls-remote -t "${url}" "$ref_name" | cut -f1)
+		if [[ -z $local_hash || "${local_hash}" != "${remote_hash}" ]]; then
+			remote_hash=$(git ls-remote -t "${url}" "$ref_name^{}" | cut -f1)
+			[[ -z $remote_hash || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		fi
+		;;
+	head)
+		remote_hash=$(git ls-remote "${url}" HEAD | cut -f1)
+		[[ -z $local_hash || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		;;
+	commit)
+		remote_hash="${ref_name}"
+		[[ -z $local_hash || $local_hash == "@" || "${local_hash}" != "${remote_hash}" ]] && changed=true
+		;;
+	esac
+	local checkout_from="HEAD"
+	if [[ "${changed}" == "true" ]]; then
+		info "Fetching updates from remote repository $dir $ref_name"
+		case $ref_type in
+		branch)
+			improved_git_fetch --no-tags "${url}" "${ref_name}"
+			;;
+		tag)
+			improved_git_fetch --no-tags "${url}" tags/"${ref_name}"
+			;;
+		head)
+			improved_git_fetch --no-tags "${url}" HEAD
+			;;
+		commit)
+			improved_git_fetch --no-tags "${url}" "${ref_name}"
+			;;
+		esac
+		checkout_from="FETCH_HEAD"
+	fi
+	info "git: Fetch from remote completed, rev-parsing... '$dir' '$ref_name' '${checkout_from}'"
+	fetched_revision="$(git rev-parse "${checkout_from}")"
+	if [[ "${do_checkout:-"yes"}" == "yes" ]]; then
+		info "git checking out revision SHA ${fetched_revision}"
+		regular_git checkout -f -q "${fetched_revision}"
+		checked_out_revision="${fetched_revision}"
+		info "git cleaning ${checked_out_revision}"
+		regular_git clean -q -d -f
+		if [[ -f .gitmodules ]]; then
+			if [[ "${GIT_SKIP_SUBMODULES}" == "yes" ]]; then
+				info "Skipping submodules GIT_SKIP_SUBMODULES=yes"
+			else
+				info "Updating submodules"
+				for i in $(git config -f .gitmodules --get-regexp path | awk '{ print $2 }'); do
+					pushd "${git_work_dir}" || {
+						error "Failed to change to directory ${git_work_dir}"
+						return 1
+					}
+					local surl sref branch_ref tag_ref commit_ref hash_ref
+					surl=$(git config -f .gitmodules --get "submodule.$i.url")
+					# Skip if no URL is found
+					[[ -z $surl ]] && continue
+					# Get the submodule references
+					branch_ref=$(git config -f .gitmodules --get "submodule.$i.branch" || true)
+					tag_ref=$(git config -f .gitmodules --get "submodule.$i.tag" || true)
+					commit_ref=$(git config -f .gitmodules --get "submodule.$i.commit" || true)
+					hash_ref=$(git config -f .gitmodules --get "submodule.$i.hash" || true)
+					# Check immutables first
+					[[ -n $commit_ref && $commit_ref != "." && "x${sref}x" == "xx" ]] && sref="commit:$commit_ref"
+					[[ -n $hash_ref && $hash_ref != "." && "x${sref}x" == "xx" ]] && sref="commit:$hash_ref"
+					# Check mutables
+					[[ -n $branch_ref && $branch_ref != "." && "x${sref}x" == "xx" ]] && sref="branch:$branch_ref"
+					[[ -n $tag_ref && $tag_ref != "." && "x${sref}x" == "xx" ]] && sref="tag:$tag_ref"
+					# Default to head if nothing found
+					[[ -z $sref || "x${sref}x" == "xx" ]] && sref="head"
+					info "Updating submodule $i - $surl - $sref"
+					git_ensure_safe_directory "$workdir/$i"
+					fetch_from_repo "$surl" "$workdir/$i" "$sref" "no"
+					popd || true
+				done
+			fi
+		fi
+	else
+		info "Skipping checkout $dir $ref_name ${checked_out_revision}"
+	fi
+	popd || true
+	return 0
+}
+
+# fetch_from_url: Overcomplicated fetch from a web URL
+#
+# Usage: fetch_from_url <url> <target_dir> [<strip_components>]
+#
+# Arguments:
+#   url: URL to fetch from
+#   target_dir: Target directory to put the fetched file(s)
+#   strip_components: Number of leading path components to strip, applies to archives only
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function fetch_from_url() {
+	local url=$1
+	local target_dir=$2
+	local strip_components=${3:-0}
+	if [ -z "$url" ] || [ -z "$target_dir" ]; then
+		error "URL and/or target directory not specified"
+		return 1
+	fi
+	local archive_name=$(basename "$url")
+	local temp_dir=$(mktemp -d)
+	local extract_dir="$temp_dir/extracted"
+	info "Downloading $url to $temp_dir/$archive_name"
+	curl -L -o "$temp_dir/$archive_name" "$url"
+	if [ $? -ne 0 ]; then
+		error "Failed to download $url"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	mkdir -p "$extract_dir"
+	local extension="${archive_name##*.}"
+	info "Extracting $temp_dir/$archive_name to $extract_dir"
+	case "$extension" in
+	tar.gz | tgz | gz)
+		tar --strip-components=$strip_components -xzf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	tar.bz2 | tbz2 | bz2)
+		tar --strip-components=$strip_components -xjf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	tar.xz | txz | xz)
+		tar --strip-components=$strip_components -xJf "$temp_dir/$archive_name" -C "$extract_dir"
+		;;
+	zip)
+		unzip -d "$extract_dir" "$temp_dir/$archive_name"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	rar)
+		unrar x "$temp_dir/$archive_name" "$extract_dir"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	7z)
+		7z x "$temp_dir/$archive_name" -o"$extract_dir"
+		if [ $strip_components -gt 0 ]; then
+			find "$extract_dir" -mindepth $strip_components -exec mv -t "$extract_dir" -- {} +
+			find "$extract_dir" -mindepth 1 -type d -exec rm -rf {} +
+		fi
+		;;
+	*)
+		warning "Unrecognized archive format: $extension. Downloading file as is."
+		if [ -f "$target_dir" ]; then
+			warning "File $target_dir already exists, overwriting"
+			rm -f "$target_dir"
+		fi
+		mv "$temp_dir/$archive_name" "$target_dir"
+		rm -rf "$temp_dir"
+		success "Fetched and moved $url to $target_dir"
+		return 0
+		;;
+	esac
+	if [ $? -ne 0 ]; then
+		error "Failed to extract $temp_dir/$archive_name"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	info "Syncing extracted files from $extract_dir to $target_dir"
+	rsync -av --delete "$extract_dir/" "$target_dir/"
+	if [ $? -ne 0 ]; then
+		error "Failed to sync extracted files to $target_dir"
+		rm -rf "$temp_dir"
+		return 1
+	fi
+	rm -rf "$temp_dir"
+	success "Fetched, extracted, and synced $url to $target_dir"
+	return 0
+}
+
+####################################################################################################
+# Core functions
+####################################################################################################
+
+# install_rtw89: Install the rtwn89 driver
+#
+# Usage: install_rtw89 <install_dir> [<version>]
+#
+# Arguments:
+#   install_dir: Installation prefix directory of rtw89
+#   version: Version of rtw89 to install (default: latest)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function install_rtw89() {
+	local _install_dir _version
+	_install_dir="$1"
+	if [ -z "${_install_dir}" ]; then
+		error "No installation directory specified."
+		return 1
+	fi
+	if [ ! -d "${_install_dir}" ]; then
+		error "Installation prefix directory ${_install_dir} does not exist"
+		return 1
+	fi
+	shift 1
+	if [ "$#" -gt 0 ]; then
+		_version=$1
+		shift 1
+	fi
+	local _ref
+	if [ -z "${_version}" ]; then
+		warning "No version specified, defaulting to latest"
+		_version="latest"
+	fi
+	case "${_version}" in
+	latest)
+		_ref="branch:main"
+		;;
+	*)
+		_ref="tag:${_version}"
+		;;
+	esac
+	info "Installing rtwn89 to ${_install_dir}"
+	if [ ! -d "${_install_dir}/rtw89" ]; then
+		mkdir -p "${_install_dir}/rtw89"
+	fi
+	fetch_from_repo "https://github.com/lwfinger/rtw89.git" "${_install_dir}/rtw89" "${_ref}" "no" || {
+		error "Failed to fetch rtw89 sources"
+		return 1
+	}
+	pushd "${_install_dir}/rtw89" || {
+		error "Failed to change to directory ${_install_dir}/rtw89"
+		return 1
+	}
+	make -j$(nproc) || {
+		error "Failed to build rtw89"
+		return 1
+	}
+	make install || {
+		error "Failed to install rtw89"
+		return 1
+	}
+	popd || {
+		error "Failed to change to previous directory"
+		return 1
+	}
+	success "rtw89 driver installed to ${_install_dir}"
+	return 0
+}
+
+# uninstall_rtw89: Uninstall the rtw89 driver
+#
+# Usage: uninstall_rtw89 <install_dir>
+#
+# Arguments:
+#   install_dir: Installation prefix directory of rtw89
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function uninstall_rtw89() {
+	local _install_dir
+	if [ "$#" -gt 0 ]; then
+		_install_dir=$1
+		shift 1
+	fi
+	if [ -z "${_install_dir}" ]; then
+		error "No installation directory specified."
+		return 1
+	fi
+	if [ ! -d "${_install_dir}/rtw89" ]; then
+		warning "rtw89 is not installed in ${_install_dir}"
+		return 0
+	fi
+	info "Uninstalling rtw89 from ${_install_dir}"
+	rm -rf "${_install_dir}/rtw89" || {
+		error "Failed to remove rtw89 from ${_install_dir}"
+		return 1
+	}
+	success "rtw89 driver uninstalled from ${_install_dir}"
+	return 0
+}
+
+# reload_rtw89: Reload the rtw89 driver
+#
+# Usage: reload_rtw89 <install_dir> <module_name>
+#
+# Arguments:
+#   install_dir: Installation prefix directory of rtw89
+#   module_name: Module name of the driver
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+function reload_rtw89() {
+	local _install_dir
+	local _module_name
+	_install_dir=$1
+	if [ -z "${_install_dir}" ]; then
+		error "No installation directory specified."
+		return 1
+	fi
+	shift 1
+	_module_name=$1
+	if [ -z "${_module_name}" ]; then
+		error "No module name specified."
+		return 1
+	fi
+	shift 1
+	if [ ! -d "${_install_dir}/rtw89" ]; then
+		error "rtw89 is not installed in ${_install_dir}"
+		return 1
+	fi
+	load_driver "${_module_name}" || {
+		return 1
+	}
+	return 0
+}
+
+####################################################################################################
+# Main program
+####################################################################################################
+
+# prevent this script from being run as anything but root
+if [ "$(id -u)" -ne 0 ]; then
+	error "This script must be run as root" 1>&2
+	exit 1
+fi
+
+parse_args ${CARGS[*]}
+case "$ACTION" in
+install)
+	install_rtw89 "${RTW89_INSTALL_PREFIX}"
+	;;
+uninstall)
+	uninstall_rtw89 "${RTW89_INSTALL_PREFIX}"
+	;;
+reload)
+	reload_rtw89 "${RTW89_INSTALL_PREFIX}" "${RTW89_RELOAD_MODULE}"
+	;;	
+*)
+	error "Unknown action: $ACTION"
+	usage
+	;;
+esac
